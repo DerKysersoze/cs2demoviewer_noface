@@ -5,66 +5,479 @@ Run: python app.py
 Then open http://localhost:5000
 """
 
+import argparse
 import datetime
 import json
+import logging
 import os
 import sqlite3
+import threading
+import time
 import zlib
 import tempfile
 import traceback
 import uuid
 from collections import OrderedDict
+from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request, send_file
+import requests
+from flask import Flask, g, jsonify, render_template, request, send_file
+
+# ── Logging setup ──────────────────────────────────────────────────────────────
+# Enabled only when launched with --verbose.
+# Use parse_known_args so Flask's own argv flags are not rejected.
+_ap = argparse.ArgumentParser(add_help=False)
+_ap.add_argument("--verbose", action="store_true", help="Enable verbose logging to core.log")
+_args, _ = _ap.parse_known_args()
+_verbose = _args.verbose
+
+_LOG_PATH = Path(__file__).parent / "core.log"
+log = logging.getLogger("cs2viewer")
+
+if _verbose:
+    _fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)-8s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    _fh = logging.FileHandler(_LOG_PATH, encoding="utf-8")
+    _fh.setFormatter(_fmt)
+    _sh = logging.StreamHandler()
+    _sh.setFormatter(_fmt)
+    log.setLevel(logging.DEBUG)
+    log.addHandler(_fh)
+    log.addHandler(_sh)
+else:
+    log.addHandler(logging.NullHandler())
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024  # 512 MB
 
+
+@app.before_request
+def _before():
+    g._req_t0 = time.monotonic()
+
+
+@app.after_request
+def _after(response):
+    elapsed_ms = round((time.monotonic() - g._req_t0) * 1000, 1)
+    log.debug("HTTP %s %s %s — %sms", request.method, request.path,
+              response.status_code, elapsed_ms)
+    return response
+
+
 # ── SQLite demo history ────────────────────────────────────────────────────────
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demos.db")
+SQL_DIR = Path(__file__).parent / "SQLdb"
+
+
+STRUCT_DB_DIR = Path(__file__).parent / "struct_db"
+IMAGES_DIR    = Path(__file__).parent / "images"
+
+
+def _load_sql(name: str) -> str:
+    return (SQL_DIR / name).read_text(encoding="utf-8")
+
+
+def _j(v):
+    """Serialize to compact JSON string; return None for empty/null values."""
+    if v is None:
+        return None
+    s = json.dumps(v, ensure_ascii=False, separators=(",", ":"))
+    return None if s in ("[]", "null") else s
+
+
+def _cache_agent_images():
+    """Download agent images from the DB and save to images/agents/.
+    Skips files that already exist. Runs in a background thread at startup."""
+    agents_dir = IMAGES_DIR / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+
+    con = sqlite3.connect(DB_PATH)
+    rows = con.execute("SELECT id, image FROM agents WHERE image IS NOT NULL").fetchall()
+    con.close()
+
+    cached = skipped = failed = 0
+    for agent_id, url in rows:
+        # Skip if any file for this agent already exists (regardless of extension)
+        existing = list(agents_dir.glob(f"{agent_id}.*"))
+        if existing:
+            skipped += 1
+            continue
+        try:
+            resp = requests.get(url, timeout=15)
+            resp.raise_for_status()
+            ct = resp.headers.get("Content-Type", "image/jpeg")
+            ext = ".png" if "png" in ct else ".jpg"
+            (agents_dir / f"{agent_id}{ext}").write_bytes(resp.content)
+            cached += 1
+            log.debug("agent image cached: %s%s", agent_id, ext)
+        except Exception as e:
+            failed += 1
+            log.warning("agent image fetch failed [%s]: %s", agent_id, e)
+
+    log.info("agent images: cached=%d  skipped=%d  failed=%d", cached, skipped, failed)
+
+
+def _load_struct_db():
+    """Populate reference tables from struct_db JSON files.
+    Each table is only populated once — skipped if already has rows."""
+    log.info("struct_db: starting reference table load from %s", STRUCT_DB_DIR)
+    _t0 = time.monotonic()
+    con = sqlite3.connect(DB_PATH)
+
+    def _json(fname):
+        p = STRUCT_DB_DIR / fname
+        if not p.exists():
+            return []
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+
+    def _ensure(sql_file, table, columns, rows):
+        con.executescript(_load_sql(sql_file))
+        if con.execute(f"SELECT COUNT(*) FROM [{table}]").fetchone()[0] > 0:
+            return
+        if not rows:
+            return
+        ph = ", ".join(["?"] * len(columns))
+        col_str = ", ".join(columns)
+        con.executemany(
+            f"INSERT OR IGNORE INTO [{table}] ({col_str}) VALUES ({ph})", rows
+        )
+        con.commit()
+        log.info("struct_db: loaded %d rows → %s", len(rows), table)
+
+    # ── agents ────────────────────────────────────────────────────────────────
+    cols = ["id", "name", "description", "def_index",
+            "rarity_id", "rarity_name", "rarity_color",
+            "team_id", "team_name", "market_hash_name", "image", "model_player",
+            "original_name", "original_image", "collections"]
+    rows = []
+    for i in _json("agents.json"):
+        r = i.get("rarity") or {}; t = i.get("team") or {}; o = i.get("original") or {}
+        rows.append((i["id"], i.get("name"), i.get("description"), i.get("def_index"),
+                     r.get("id"), r.get("name"), r.get("color"),
+                     t.get("id"), t.get("name"),
+                     i.get("market_hash_name"), i.get("image"), i.get("model_player"),
+                     o.get("name"), o.get("image_inventory"), _j(i.get("collections"))))
+    _ensure("schema_agents.sql", "agents", cols, rows)
+
+    # ── base_weapons ──────────────────────────────────────────────────────────
+    cols = ["id", "name", "description", "def_index", "category_id", "category_name", "image"]
+    rows = []
+    for i in _json("base_weapons.json"):
+        c = i.get("category") or {}
+        rows.append((i["id"], i.get("name"), i.get("description"), str(i.get("def_index", "")),
+                     c.get("id"), c.get("name"), i.get("image")))
+    _ensure("schema_base_weapons.sql", "base_weapons", cols, rows)
+
+    # ── collectibles ─────────────────────────────────────────────────────────
+    cols = ["id", "name", "description", "def_index",
+            "rarity_id", "rarity_name", "rarity_color",
+            "type", "genuine", "market_hash_name", "image",
+            "original_item_name", "original_image"]
+    rows = []
+    for i in _json("collectibles.json"):
+        r = i.get("rarity") or {}; o = i.get("original") or {}
+        rows.append((i["id"], i.get("name"), i.get("description"), i.get("def_index"),
+                     r.get("id"), r.get("name"), r.get("color"),
+                     i.get("type"), int(bool(i.get("genuine"))), i.get("market_hash_name"),
+                     i.get("image"), o.get("item_name"), o.get("image_inventory")))
+    _ensure("schema_collectibles.sql", "collectibles", cols, rows)
+
+    # ── collections ───────────────────────────────────────────────────────────
+    cols = ["id", "name", "image", "original_name", "original_image", "crates", "contains"]
+    rows = []
+    for i in _json("collections.json"):
+        o = i.get("original") or {}
+        rows.append((i["id"], i.get("name"), i.get("image"),
+                     o.get("name"), o.get("image_inventory"),
+                     _j(i.get("crates")), _j(i.get("contains"))))
+    _ensure("schema_collections.sql", "collections", cols, rows)
+
+    # ── crates ────────────────────────────────────────────────────────────────
+    cols = ["id", "name", "description", "def_index", "type", "first_sale_date",
+            "rarity_id", "rarity_name", "rarity_color",
+            "market_hash_name", "rental", "image", "model_player", "loot_list",
+            "original_item_name", "original_image", "contains", "contains_rare"]
+    rows = []
+    for i in _json("crates.json"):
+        r = i.get("rarity") or {}; o = i.get("original") or {}
+        rows.append((i["id"], i.get("name"), i.get("description"), i.get("def_index"),
+                     i.get("type"), i.get("first_sale_date"),
+                     r.get("id"), r.get("name"), r.get("color"),
+                     i.get("market_hash_name"), int(bool(i.get("rental"))),
+                     i.get("image"), i.get("model_player"), _j(i.get("loot_list")),
+                     o.get("item_name"), o.get("image_inventory"),
+                     _j(i.get("contains")), _j(i.get("contains_rare"))))
+    _ensure("schema_crates.sql", "crates", cols, rows)
+
+    # ── graffiti ──────────────────────────────────────────────────────────────
+    cols = ["id", "name", "description", "def_index",
+            "rarity_id", "rarity_name", "rarity_color",
+            "market_hash_name", "image", "original_name", "original_image", "crates"]
+    rows = []
+    for i in _json("graffiti.json"):
+        r = i.get("rarity") or {}; o = i.get("original") or {}
+        rows.append((i["id"], i.get("name"), i.get("description"), i.get("def_index"),
+                     r.get("id"), r.get("name"), r.get("color"),
+                     i.get("market_hash_name"), i.get("image"),
+                     o.get("name"), o.get("image_inventory"), _j(i.get("crates"))))
+    _ensure("schema_graffiti.sql", "graffiti", cols, rows)
+
+    # ── highlights ────────────────────────────────────────────────────────────
+    cols = ["id", "def_index", "name", "description",
+            "tournament_event", "team0", "team1", "stage", "tournament_player", "map",
+            "market_hash_name", "image", "video", "thumbnail",
+            "original_id", "original_image"]
+    rows = []
+    for i in _json("highlights.json"):
+        o = i.get("original") or {}
+        rows.append((i["id"], i.get("def_index"), i.get("name"), i.get("description"),
+                     i.get("tournament_event"), i.get("team0"), i.get("team1"),
+                     i.get("stage"), i.get("tournament_player"), i.get("map"),
+                     i.get("market_hash_name"), i.get("image"), i.get("video"), i.get("thumbnail"),
+                     o.get("id"), o.get("image_inventory")))
+    _ensure("schema_highlights.sql", "highlights", cols, rows)
+
+    # ── inventory (nested dict: {skins: {weapon_id: {paint_index: {...}}}}) ──
+    cols = ["weapon_id", "paint_index", "name",
+            "rarity_id", "rarity_name", "rarity_color", "marketable", "image"]
+    rows = []
+    inv = _json("inventory.json")
+    if isinstance(inv, dict):
+        for weapon_id, paints in inv.get("skins", {}).items():
+            for paint_index, info in paints.items():
+                r = info.get("rarity") or {}
+                rows.append((weapon_id, paint_index, info.get("name"),
+                             r.get("id"), r.get("name"), r.get("color"),
+                             int(bool(info.get("marketable"))), info.get("image")))
+    _ensure("schema_inventory.sql", "inventory", cols, rows)
+
+    # ── keychains ─────────────────────────────────────────────────────────────
+    cols = ["id", "name", "description", "def_index",
+            "rarity_id", "rarity_name", "rarity_color",
+            "market_hash_name", "image", "original_loc_name", "original_image", "collections"]
+    rows = []
+    for i in _json("keychains.json"):
+        r = i.get("rarity") or {}; o = i.get("original") or {}
+        rows.append((i["id"], i.get("name"), i.get("description"), i.get("def_index"),
+                     r.get("id"), r.get("name"), r.get("color"),
+                     i.get("market_hash_name"), i.get("image"),
+                     o.get("loc_name"), o.get("image_inventory"), _j(i.get("collections"))))
+    _ensure("schema_keychains.sql", "keychains", cols, rows)
+
+    # ── keys ──────────────────────────────────────────────────────────────────
+    cols = ["id", "name", "description", "def_index",
+            "market_hash_name", "marketable", "image",
+            "original_item_name", "original_image", "crates"]
+    rows = []
+    for i in _json("keys.json"):
+        o = i.get("original") or {}
+        rows.append((i["id"], i.get("name"), i.get("description"), i.get("def_index"),
+                     i.get("market_hash_name"), int(bool(i.get("marketable"))),
+                     i.get("image"), o.get("item_name"), o.get("image_inventory"),
+                     _j(i.get("crates"))))
+    _ensure("schema_keys.sql", "keys", cols, rows)
+
+    # ── music_kits ────────────────────────────────────────────────────────────
+    cols = ["id", "name", "description", "def_index",
+            "rarity_id", "rarity_name", "rarity_color",
+            "market_hash_name", "exclusive", "image", "original_name", "original_image"]
+    rows = []
+    for i in _json("music_kits.json"):
+        r = i.get("rarity") or {}; o = i.get("original") or {}
+        rows.append((i["id"], i.get("name"), i.get("description"), i.get("def_index"),
+                     r.get("id"), r.get("name"), r.get("color"),
+                     i.get("market_hash_name"), int(bool(i.get("exclusive"))),
+                     i.get("image"), o.get("name"), o.get("image_inventory")))
+    _ensure("schema_music_kits.sql", "music_kits", cols, rows)
+
+    # ── patches ───────────────────────────────────────────────────────────────
+    cols = ["id", "name", "description", "def_index",
+            "rarity_id", "rarity_name", "rarity_color",
+            "market_hash_name", "image", "original_name", "original_image"]
+    rows = []
+    for i in _json("patches.json"):
+        r = i.get("rarity") or {}; o = i.get("original") or {}
+        rows.append((i["id"], i.get("name"), i.get("description"), i.get("def_index"),
+                     r.get("id"), r.get("name"), r.get("color"),
+                     i.get("market_hash_name"), i.get("image"),
+                     o.get("name"), o.get("image_inventory")))
+    _ensure("schema_patches.sql", "patches", cols, rows)
+
+    # ── skins ─────────────────────────────────────────────────────────────────
+    cols = ["id", "name", "description",
+            "weapon_id", "weapon_weapon_id", "weapon_name",
+            "category_id", "category_name", "pattern_id", "pattern_name",
+            "min_float", "max_float",
+            "rarity_id", "rarity_name", "rarity_color",
+            "stattrak", "souvenir", "paint_index",
+            "team_id", "team_name", "legacy_model", "image", "original_name",
+            "wears", "collections", "crates"]
+    rows = []
+    for i in _json("skins.json"):
+        w = i.get("weapon") or {}; c = i.get("category") or {}; p = i.get("pattern") or {}
+        r = i.get("rarity") or {}; t = i.get("team") or {}; o = i.get("original") or {}
+        rows.append((i["id"], i.get("name"), i.get("description"),
+                     w.get("id"), w.get("weapon_id"), w.get("name"),
+                     c.get("id"), c.get("name"), p.get("id"), p.get("name"),
+                     i.get("min_float"), i.get("max_float"),
+                     r.get("id"), r.get("name"), r.get("color"),
+                     int(bool(i.get("stattrak"))), int(bool(i.get("souvenir"))),
+                     i.get("paint_index"),
+                     t.get("id"), t.get("name"), int(bool(i.get("legacy_model"))),
+                     i.get("image"), o.get("name"),
+                     _j(i.get("wears")), _j(i.get("collections")), _j(i.get("crates"))))
+    _ensure("schema_skins.sql", "skins", cols, rows)
+
+    # ── skins_not_grouped ─────────────────────────────────────────────────────
+    cols = ["id", "skin_id", "name", "description",
+            "weapon_id", "weapon_weapon_id", "weapon_name",
+            "category_id", "category_name", "pattern_id", "pattern_name",
+            "min_float", "max_float", "wear_id", "wear_name",
+            "stattrak", "souvenir", "paint_index",
+            "rarity_id", "rarity_name", "rarity_color", "market_hash_name",
+            "team_id", "team_name", "style_id", "style_name", "style_url",
+            "legacy_model", "image", "original_name", "original_image"]
+    rows = []
+    for i in _json("skins_not_grouped.json"):
+        w = i.get("weapon") or {}; c = i.get("category") or {}; p = i.get("pattern") or {}
+        r = i.get("rarity") or {}; ww = i.get("wear") or {}
+        t = i.get("team") or {}; s = i.get("style") or {}; o = i.get("original") or {}
+        rows.append((i["id"], i.get("skin_id"), i.get("name"), i.get("description"),
+                     w.get("id"), w.get("weapon_id"), w.get("name"),
+                     c.get("id"), c.get("name"), p.get("id"), p.get("name"),
+                     i.get("min_float"), i.get("max_float"),
+                     ww.get("id"), ww.get("name"),
+                     int(bool(i.get("stattrak"))), int(bool(i.get("souvenir"))),
+                     i.get("paint_index"),
+                     r.get("id"), r.get("name"), r.get("color"),
+                     i.get("market_hash_name"),
+                     t.get("id"), t.get("name"), s.get("id"), s.get("name"), s.get("url"),
+                     int(bool(i.get("legacy_model"))), i.get("image"),
+                     o.get("name"), o.get("image_inventory")))
+    _ensure("schema_skins_not_grouped.sql", "skins_not_grouped", cols, rows)
+
+    # ── sticker_slabs & stickers (identical structure) ────────────────────────
+    for table, sql_file in [("sticker_slabs", "schema_sticker_slabs.sql"),
+                             ("stickers",      "schema_stickers.sql")]:
+        cols = ["id", "name", "description", "def_index",
+                "rarity_id", "rarity_name", "rarity_color",
+                "type", "market_hash_name", "effect",
+                "tournament_id", "tournament_name",
+                "image", "original_name", "original_image", "crates", "collections"]
+        rows = []
+        for i in _json(f"{table}.json"):
+            r = i.get("rarity") or {}; tt = i.get("tournament") or {}; o = i.get("original") or {}
+            rows.append((i["id"], i.get("name"), i.get("description"), i.get("def_index"),
+                         r.get("id"), r.get("name"), r.get("color"),
+                         i.get("type"), i.get("market_hash_name"), i.get("effect"),
+                         tt.get("id"), tt.get("name"),
+                         i.get("image"), o.get("name"), o.get("image_inventory"),
+                         _j(i.get("crates")), _j(i.get("collections"))))
+        _ensure(sql_file, table, cols, rows)
+
+    # ── tools ─────────────────────────────────────────────────────────────────
+    cols = ["id", "name", "description", "def_index", "image", "original_image"]
+    rows = []
+    for i in _json("tools.json"):
+        o = i.get("original") or {}
+        rows.append((i["id"], i.get("name"), i.get("description"), i.get("def_index"),
+                     i.get("image"), o.get("image_inventory")))
+    _ensure("schema_tools.sql", "tools", cols, rows)
+
+    con.close()
+    log.info("struct_db: reference tables ready (%.2fs)", time.monotonic() - _t0)
+
+
+def _blob(obj) -> sqlite3.Binary:
+    return sqlite3.Binary(zlib.compress(json.dumps(obj, ensure_ascii=False).encode(), level=6))
+
+
+def _unblob(raw) -> object:
+    return json.loads(zlib.decompress(bytes(raw)).decode())
 
 
 def _db_init():
+    log.info("DB: initialising — %s", DB_PATH)
     con = sqlite3.connect(DB_PATH)
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS demos (
-            id          TEXT PRIMARY KEY,
-            filename    TEXT NOT NULL,
-            map         TEXT NOT NULL,
-            uploaded_at TEXT NOT NULL,
-            data        TEXT NOT NULL,
-            ticks_data  BLOB
-        )
-    """)
-    # Migrate existing databases that pre-date the ticks_data column
-    try:
-        con.execute("ALTER TABLE demos ADD COLUMN ticks_data BLOB")
-    except sqlite3.OperationalError:
-        pass  # column already exists
+
+    # Create new normalised demos schema if it doesn't exist yet
+    con.executescript(_load_sql("schema_demos.sql"))
+
+    # ---- Migrate old skin_names table (drop it; skins will be populated from struct_db) ----
+    tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    if "skin_names" in tables:
+        con.execute("DROP TABLE skin_names")
+
+    # ---- Migrate old skins table (paint_index INTEGER PK → new id TEXT PK schema) ----
+    skins_col0 = con.execute("PRAGMA table_info(skins)").fetchone()
+    if skins_col0 and skins_col0[1] == "paint_index":
+        con.execute("DROP TABLE skins")
+        log.info("DB: dropped old skins table (will be repopulated from struct_db/skins.json)")
+
+    # ---- Migrate old schema (single `data` TEXT column) ----
+    cols = {r[1] for r in con.execute("PRAGMA table_info(demos)").fetchall()}
+    if "data" in cols:
+        log.info("DB: migrating old schema to normalised columns…")
+        rows = con.execute("SELECT id, filename, map, uploaded_at, data, ticks_data FROM demos").fetchall()
+        con.executescript(_load_sql("migrate_demos_v1_v2.sql"))
+        for row in rows:
+            rid, filename, map_name, uploaded_at, data_json, ticks_blob = row
+            try:
+                d = json.loads(data_json)
+            except Exception:
+                continue
+            h = d.get("header") or {}
+            con.execute(
+                "INSERT INTO demos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    rid, filename, map_name, uploaded_at,
+                    h.get("tickrate"), h.get("duration"),
+                    d.get("ct_team"), d.get("t_team"),
+                    d.get("ct_wins"), d.get("t_wins"), d.get("total_rounds"),
+                    d.get("session_id"), int(bool(d.get("has_ticks"))),
+                    _blob(d["rounds"])        if d.get("rounds")        else None,
+                    _blob(d["kills"])         if d.get("kills")         else None,
+                    _blob(d["scoreboard"])    if d.get("scoreboard")    else None,
+                    _blob(d["aim_breakdown"]) if d.get("aim_breakdown") else None,
+                    _blob(d["swag_breakdown"]) if d.get("swag_breakdown") else None,
+                    ticks_blob,
+                ),
+            )
+        log.info("DB: migrated %d rows", len(rows))
+
     con.commit()
     con.close()
+
+    log.info("DB: schema ready")
+    # Populate all struct_db reference tables from JSON files
+    _load_struct_db()
 
 
 def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
              ticks_by_round: dict = None):
-    storable = dict(data_dict)
-    storable["has_ticks"] = bool(ticks_by_round)
-    # session_id is kept so _db_get can restore the cache entry
-    ticks_blob = None
-    if ticks_by_round:
-        ticks_blob = sqlite3.Binary(
-            zlib.compress(json.dumps(ticks_by_round, ensure_ascii=False).encode(), level=6)
-        )
+    h = data_dict.get("header") or {}
+    has_ticks = bool(ticks_by_round)
+    ticks_blob = _blob(ticks_by_round) if ticks_by_round else None
     con = sqlite3.connect(DB_PATH)
     con.execute(
-        "INSERT OR REPLACE INTO demos (id, filename, map, uploaded_at, data, ticks_data)"
-        " VALUES (?,?,?,?,?,?)",
+        "INSERT OR REPLACE INTO demos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
-            demo_id,
-            filename,
-            map_name,
+            demo_id, filename, map_name,
             datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
-            json.dumps(storable, ensure_ascii=False),
+            h.get("tickrate"), h.get("duration"),
+            data_dict.get("ct_team"), data_dict.get("t_team"),
+            data_dict.get("ct_wins"), data_dict.get("t_wins"),
+            data_dict.get("total_rounds"),
+            demo_id,  # session_id == demo_id
+            int(has_ticks),
+            _blob(data_dict["rounds"])        if data_dict.get("rounds")        else None,
+            _blob(data_dict["kills"])         if data_dict.get("kills")         else None,
+            _blob(data_dict["scoreboard"])    if data_dict.get("scoreboard")    else None,
+            _blob(data_dict["aim_breakdown"]) if data_dict.get("aim_breakdown") else None,
+            _blob(data_dict["swag_breakdown"]) if data_dict.get("swag_breakdown") else None,
             ticks_blob,
         ),
     )
@@ -84,26 +497,45 @@ def _db_list() -> list:
 
 def _db_get(demo_id: str):
     con = sqlite3.connect(DB_PATH)
-    row = con.execute("SELECT data, ticks_data FROM demos WHERE id = ?", (demo_id,)).fetchone()
+    con.row_factory = sqlite3.Row
+    row = con.execute("SELECT * FROM demos WHERE id = ?", (demo_id,)).fetchone()
     con.close()
     if not row:
         return None
-    data = json.loads(row[0])
-    if row[1]:
-        # Decompress and restore tick data to the session cache
-        ticks_by_round = {
-            int(k): v
-            for k, v in json.loads(zlib.decompress(bytes(row[1])).decode()).items()
-        }
-        session_id = data.get("session_id")
+
+    data = {
+        "header": {
+            "map":      row["map"],
+            "tickrate": row["tickrate"],
+            "duration": row["duration"],
+        },
+        "ct_team":      row["ct_team"],
+        "t_team":       row["t_team"],
+        "ct_wins":      row["ct_wins"],
+        "t_wins":       row["t_wins"],
+        "total_rounds": row["total_rounds"],
+        "session_id":   row["session_id"],
+        "has_ticks":    bool(row["has_ticks"]),
+        "filename":     row["filename"],
+        "rounds":        _unblob(row["rounds"])        if row["rounds"]        else [],
+        "kills":         _unblob(row["kills"])         if row["kills"]         else [],
+        "scoreboard":    _unblob(row["scoreboard"])    if row["scoreboard"]    else [],
+        "aim_breakdown": _unblob(row["aim_breakdown"]) if row["aim_breakdown"] else [],
+        "swag_breakdown":_unblob(row["swag_breakdown"]) if row["swag_breakdown"] else [],
+    }
+
+    if row["ticks_data"]:
+        ticks_by_round = {int(k): v for k, v in _unblob(row["ticks_data"]).items()}
+        session_id = row["session_id"]
         if session_id:
             if len(_session_cache) >= MAX_SESSIONS:
                 _session_cache.popitem(last=False)
             _session_cache[session_id] = {
                 "ticks":    ticks_by_round,
-                "map_name": data.get("header", {}).get("map", ""),
+                "map_name": row["map"],
             }
         data["has_ticks"] = True
+
     return data
 
 
@@ -205,15 +637,19 @@ def extract_ticks(demo) -> dict:
     side_col  = next((c for c in ["side", "team_side", "Side"] if c in cols), None)
 
     if not (name_col and x_col and y_col and "tick" in cols and "round_num" in cols):
-        print(f"[WARN] Missing required tick columns — map tracker disabled")
+        log.warning("missing required tick columns — map tracker disabled")
         return {}
 
     import pandas as pd
     import numpy as np
 
+    ROUND_START_SKIP = 160  # freeze-time / buy-phase ticks to skip each round
+
     result = {}
     for round_num, rdf in ticks_df.groupby("round_num"):
         all_ticks = np.sort(rdf["tick"].unique())
+        if len(all_ticks) > ROUND_START_SKIP:
+            all_ticks = all_ticks[ROUND_START_SKIP:]
         sampled   = set(all_ticks[::TICK_SAMPLE])
         sdf       = rdf[rdf["tick"].isin(sampled)].copy()
 
@@ -246,6 +682,314 @@ def extract_ticks(demo) -> dict:
 
         result[int(round_num)] = sorted(frames, key=lambda f: f["t"])
 
+    return result
+
+
+_AGENT_NAMES = {
+    4613: "Bloody Darryl The Strapped", 4619: "'Blueberries' Buckshot",
+    4680: "'Two Times' McCoy", 4711: "Cmdr. Mae 'Dead Cold' Jamison",
+    4712: "1st Lieutenant Farlow", 4713: "John 'Van Healen' Kask",
+    4714: "Bio-Haz Specialist", 4715: "Sergeant Bombson",
+    4716: "Chem-Haz Specialist", 4718: "Rezan the Redshirt",
+    4726: "Sir Bloody Miami Darryl", 4727: "Safecracker Voltzmann",
+    4728: "Little Kev", 4730: "Getaway Sally", 4732: "Number K",
+    4733: "Sir Bloody Silent Darryl", 4734: "Sir Bloody Skullhead Darryl",
+    4735: "Sir Bloody Darryl Royale", 4736: "Sir Bloody Loudmouth Darryl",
+    4749: "Sous-Lieutenant Medic", 4750: "Chem-Haz Capitaine",
+    4751: "Chef d'Escadron Rouchard", 4752: "Aspirant",
+    4753: "Officer Jacques Beltram", 4756: "Lieutenant 'Tree Hugger' Farlow",
+    4757: "Cmdr. Davida 'Goggles' Fernandez", 4771: "Cmdr. Frank 'Wet Sox' Baroud",
+    4772: "Lieutenant Rex Krikey", 4773: "Elite Trapper Solman",
+    4774: "Crasswater The Forgotten", 4775: "Arno The Overgrown",
+    4776: "Col. Mangos Dabisi", 4777: "Vypa Sista of the Revolution",
+    4778: "Trapper Aggressor", 4780: "'Medium Rare' Crasswater", 4781: "Trapper",
+    5105: "Ground Rebel", 5106: "Osiris", 5107: "Prof. Shahmat",
+    5108: "The Elite Mr. Muhlik", 5109: "Jungle Rebel",
+    5205: "Soldier", 5206: "Enforcer", 5207: "Slingshot", 5208: "Street Soldier",
+    5305: "Operator", 5306: "Markus Delrow", 5307: "Michael Syfers",
+    5308: "Special Agent Ava", 5400: "3rd Commando Company",
+    5401: "Seal Team 6 Soldier", 5402: "Buckshot", 5403: "'Two Times' McCoy",
+    5404: "Lt. Commander Ricksaw", 5405: "Primeiro Tenente",
+    5500: "Dragomir", 5501: "Maximus", 5502: "Rezan The Ready",
+    5503: "Blackwolf", 5504: "'The Doctor' Romanov", 5505: "Dragomir",
+    5601: "B Squadron Officer", 5602: "D Squadron Officer",
+}
+
+_WEAPON_NAMES = {
+    1: "Desert Eagle", 2: "Dual Berettas", 3: "Five-SeveN", 4: "Glock-18",
+    7: "AK-47", 8: "AUG", 9: "AWP", 10: "FAMAS", 11: "G3SG1",
+    13: "Galil AR", 14: "M249", 16: "M4A4", 17: "MAC-10", 19: "P90",
+    23: "MP5-SD", 24: "UMP-45", 25: "XM1014", 26: "PP-Bizon",
+    27: "MAG-7", 28: "Negev", 29: "Sawed-Off", 30: "Tec-9",
+    31: "Zeus x27", 32: "P2000", 33: "MP7", 34: "MP9", 35: "Nova",
+    36: "P250", 38: "SCAR-20", 39: "SG 553", 40: "SSG 08",
+    41: "Knife (CT)", 59: "Knife (T)",
+    60: "M4A1-S", 61: "USP-S", 62: "CZ75-Auto", 63: "R8 Revolver",
+    500: "Bayonet", 505: "Flip Knife", 506: "Gut Knife", 507: "Karambit",
+    508: "M9 Bayonet", 509: "Huntsman Knife", 512: "Butterfly Knife",
+    514: "Falchion Knife", 515: "Shadow Daggers", 516: "Bowie Knife",
+    517: "Ursus Knife", 518: "Navaja Knife", 519: "Stiletto Knife",
+    520: "Talon Knife", 521: "Classic Knife", 522: "Paracord Knife",
+    523: "Survival Knife", 525: "Nomad Knife", 526: "Skeleton Knife",
+    # Gloves
+    5027: "Sport Gloves", 5028: "Driver Gloves", 5029: "Hand Wraps",
+    5030: "Moto Gloves", 5031: "Specialist Gloves", 5032: "Hydra Gloves",
+    5033: "Broken Fang Gloves", 5034: "Bloodhound Gloves",
+}
+
+# Side each weapon def_index belongs to ('CT', 'T', or 'both')
+_WEAPON_SIDE: dict = {
+    # CT-only
+    8: "CT", 10: "CT", 16: "CT", 32: "CT", 34: "CT", 41: "CT", 60: "CT", 61: "CT",
+    # T-only
+    4: "T", 7: "T", 13: "T", 17: "T", 30: "T", 39: "T", 59: "T",
+    # Special knives and gloves: T or CT depending on player choice —
+    # resolved at runtime from parse_skins inventory slot; default both
+}
+# Knives 500-526: require inventory slot analysis; mark as both for now,
+# resolved below via agent-side lookup if only one knife entry exists.
+
+# CS2 event weapon class name -> def_index (for weapon_fire fallback)
+_WEAPON_CLASS_TO_DEFIDX: dict = {
+    "weapon_deagle":        1,
+    "weapon_elite":         2,
+    "weapon_fiveseven":     3,
+    "weapon_glock":         4,
+    "weapon_ak47":          7,
+    "weapon_aug":           8,
+    "weapon_awp":           9,
+    "weapon_famas":         10,
+    "weapon_g3sg1":         11,
+    "weapon_galilar":       13,
+    "weapon_m249":          14,
+    "weapon_m4a1":          16,   # M4A4
+    "weapon_mac10":         17,
+    "weapon_p90":           19,
+    "weapon_mp5sd":         23,
+    "weapon_ump45":         24,
+    "weapon_xm1014":        25,
+    "weapon_bizon":         26,
+    "weapon_mag7":          27,
+    "weapon_negev":         28,
+    "weapon_sawedoff":      29,
+    "weapon_tec9":          30,
+    "weapon_taser":         31,
+    "weapon_hkp2000":       32,
+    "weapon_mp7":           33,
+    "weapon_mp9":           34,
+    "weapon_nova":          35,
+    "weapon_p250":          36,
+    "weapon_scar20":        38,
+    "weapon_sg556":         39,
+    "weapon_ssg08":         40,
+    "weapon_knife":         41,   # CT default knife
+    "weapon_knife_t":       59,   # T default knife
+    "weapon_m4a1_silencer": 60,   # M4A1-S
+    "weapon_usp_silencer":  61,   # USP-S
+    "weapon_cz75a":         62,
+    "weapon_revolver":      63,
+}
+
+# Side each agent def_index belongs to
+_AGENT_SIDE: dict = {
+    # T-side agents
+    4613: "T", 4718: "T",
+    4726: "T", 4727: "T", 4728: "T", 4730: "T", 4732: "T",
+    4733: "T", 4734: "T", 4735: "T", 4736: "T",
+    4773: "T", 4774: "T", 4775: "T", 4776: "T", 4777: "T",
+    4778: "T", 4780: "T", 4781: "T",
+    5105: "T", 5106: "T", 5107: "T", 5108: "T", 5109: "T",
+    5205: "T", 5206: "T", 5207: "T", 5208: "T",
+    5500: "T", 5501: "T", 5502: "T", 5503: "T", 5504: "T", 5505: "T",
+    # CT-side agents
+    4619: "CT", 4680: "CT",
+    4711: "CT", 4712: "CT", 4713: "CT", 4714: "CT", 4715: "CT", 4716: "CT",
+    4749: "CT", 4750: "CT", 4751: "CT", 4752: "CT", 4753: "CT", 4756: "CT",
+    4757: "CT", 4771: "CT", 4772: "CT",
+    5305: "CT", 5306: "CT", 5307: "CT", 5308: "CT",
+    5400: "CT", 5401: "CT", 5402: "CT", 5403: "CT", 5404: "CT", 5405: "CT",
+    5601: "CT", 5602: "CT",
+}
+
+_WEAR_TIERS = [
+    (0.07,  "Factory New"),
+    (0.15,  "Minimal Wear"),
+    (0.38,  "Field-Tested"),
+    (0.45,  "Well-Worn"),
+    (1.01,  "Battle-Scarred"),
+]
+
+
+def _wear_tier(f: float) -> str:
+    for limit, label in _WEAR_TIERS:
+        if f <= limit:
+            return label
+    return "Battle-Scarred"
+
+
+_SKIN_NAMES: dict = {}
+_SKIN_NAMES_LOADED = False
+
+
+def _load_skin_names() -> dict:
+    """Build paint_index -> skin name dict from the skins table (populated by _load_struct_db)."""
+    global _SKIN_NAMES, _SKIN_NAMES_LOADED
+    if _SKIN_NAMES_LOADED:
+        return _SKIN_NAMES
+    _SKIN_NAMES_LOADED = True
+    con = sqlite3.connect(DB_PATH)
+    try:
+        rows = con.execute(
+            "SELECT paint_index, name FROM skins WHERE paint_index IS NOT NULL AND paint_index != ''"
+        ).fetchall()
+        _SKIN_NAMES = {str(r[0]): r[1] for r in rows}
+        log.info("skin names: loaded %d entries from skins table", len(_SKIN_NAMES))
+    except Exception as e:
+        log.warning("skin names: failed to load from skins table: %s", e)
+        _SKIN_NAMES = {}
+    finally:
+        con.close()
+    return _SKIN_NAMES
+
+
+def extract_cosmetics(dem_path: str) -> list:
+    """Return per-player agent + weapon skin data using demoparser2 directly."""
+    import struct
+    import pandas as pd
+    try:
+        from demoparser2 import DemoParser
+    except ImportError:
+        return []
+
+    skin_names = _load_skin_names()
+
+    try:
+        parser   = DemoParser(dem_path)
+        skins_df = parser.parse_skins()
+        info_df  = parser.parse_player_info()
+    except Exception as e:
+        log.warning("extract_cosmetics parse failed: %s", e)
+        return []
+
+    # ---- StatTrak: steamid -> {def_index -> count} ----
+    stattrak: dict = {}
+    try:
+        st_df = parser.parse_ticks(["Weapon.m_nFallbackStatTrak", "Weapon.m_iItemDefinitionIndex"])
+        st_df = st_df[st_df["Weapon.m_nFallbackStatTrak"].notna() &
+                      (st_df["Weapon.m_nFallbackStatTrak"] > 0)]
+        for _, row in st_df.drop_duplicates(subset=["steamid", "Weapon.m_iItemDefinitionIndex"]).iterrows():
+            sid = str(row["steamid"])
+            didx = int(row["Weapon.m_iItemDefinitionIndex"])
+            stattrak.setdefault(sid, {})[didx] = int(row["Weapon.m_nFallbackStatTrak"])
+    except Exception:
+        pass
+
+    # ---- Weapons fired per player (fallback for unskinned weapons) ----
+    player_weapons_used: dict = {}  # steamid -> set of def_indices
+    try:
+        fire_df = parser.parse_event("weapon_fire", player=["steamid"])
+        sid_col = "user_steamid" if "user_steamid" in fire_df.columns else "steamid"
+        for _, row in fire_df.iterrows():
+            sid = str(row.get(sid_col, ""))
+            defidx = _WEAPON_CLASS_TO_DEFIDX.get(str(row.get("weapon", "")))
+            if defidx and sid:
+                player_weapons_used.setdefault(sid, set()).add(defidx)
+    except Exception:
+        pass
+
+    # steamid -> {name, team}
+    sid_info: dict = {}
+    for _, row in info_df.iterrows():
+        sid_info[str(row["steamid"])] = {
+            "name": str(row["name"]),
+            "team": "CT" if int(row["team_number"]) == 3 else "T",
+        }
+
+    # steamid -> items list
+    sid_items: dict = {}
+    for _, row in skins_df.iterrows():
+        sid       = str(row["steamid"])
+        def_idx   = int(row["def_index"])
+        paint_idx = int(row["paint_index"]) if not pd.isna(row["paint_index"]) else 0
+        paint_seed = int(row["paint_seed"]) if not pd.isna(row.get("paint_seed", float("nan"))) else None
+        wear_raw  = row.get("paint_wear")
+        wear_f    = None
+        if wear_raw is not None and not pd.isna(wear_raw):
+            try:
+                wear_f = round(struct.unpack("f", struct.pack("I", int(wear_raw)))[0], 4)
+            except Exception:
+                pass
+        custom = row.get("custom_name")
+        custom = str(custom) if custom is not None and not pd.isna(custom) else None
+
+        # Agents have no wear and typically def_index >= 4600
+        is_agent = (def_idx >= 4600 and wear_f is None)
+
+        if is_agent:
+            item_name = _AGENT_NAMES.get(def_idx, f"Agent #{def_idx}")
+            item_side = _AGENT_SIDE.get(def_idx, "both")
+            skin_name = None
+        else:
+            item_name = _WEAPON_NAMES.get(def_idx, f"Item #{def_idx}")
+            item_side = _WEAPON_SIDE.get(def_idx, "both")
+            skin_name = skin_names.get(str(paint_idx)) if paint_idx else None
+
+        st_count = stattrak.get(sid, {}).get(def_idx)
+
+        sid_items.setdefault(sid, []).append({
+            "def_index":   def_idx,
+            "item_name":   item_name,
+            "skin_name":   skin_name,
+            "paint_index": paint_idx,
+            "paint_seed":  paint_seed,
+            "wear":        wear_f,
+            "wear_tier":   _wear_tier(wear_f) if wear_f is not None else None,
+            "custom_name": custom,
+            "stattrak":    st_count,
+            "is_agent":    is_agent,
+            "side":        item_side,
+        })
+
+    # Fill in default (no-skin) entries for weapons used in-game but absent from parse_skins
+    for sid, used_defidxs in player_weapons_used.items():
+        existing = {i["def_index"] for i in sid_items.get(sid, []) if not i["is_agent"]}
+        for defidx in sorted(used_defidxs):
+            if defidx not in existing:
+                sid_items.setdefault(sid, []).append({
+                    "def_index":   defidx,
+                    "item_name":   _WEAPON_NAMES.get(defidx, f"Item #{defidx}"),
+                    "skin_name":   None,
+                    "paint_index": 0,
+                    "paint_seed":  None,
+                    "wear":        None,
+                    "wear_tier":   None,
+                    "custom_name": None,
+                    "stattrak":    None,
+                    "is_agent":    False,
+                    "side":        _WEAPON_SIDE.get(defidx, "both"),
+                })
+
+    result = []
+    for sid, info in sid_info.items():
+        items = sid_items.get(sid, [])
+
+        def _weapons_for(side: str):
+            return sorted(
+                [i for i in items if not i["is_agent"] and i["side"] in (side, "both")],
+                key=lambda x: x["def_index"],
+            )
+
+        result.append({
+            "steamid":    sid,
+            "name":       info["name"],
+            "team":       info["team"],
+            "ct_agent":   next((i for i in items if i["is_agent"] and i["side"] in ("CT", "both")), None),
+            "t_agent":    next((i for i in items if i["is_agent"] and i["side"] in ("T",  "both")), None),
+            "ct_weapons": _weapons_for("CT"),
+            "t_weapons":  _weapons_for("T"),
+        })
+
+    result.sort(key=lambda p: (0 if p["team"] == "CT" else 1, p["name"]))
     return result
 
 
@@ -494,6 +1238,18 @@ def parse_demo(dem_path: str) -> dict:
                 "assister":      str(row.get("assister_name") or ""),
             })
 
+    # ---- Steam ID map (name -> steamid64) ----
+    steamids: dict = {}
+    if kills_df is not None:
+        for col_name, col_id in [("attacker_name", "attacker_steamid"), ("victim_name", "victim_steamid")]:
+            if col_name in kills_df.columns and col_id in kills_df.columns:
+                for name, sid in zip(kills_df[col_name], kills_df[col_id]):
+                    if name and str(name) not in ("nan", "?") and sid and str(sid) not in ("nan", "0", ""):
+                        # Strip decimal without going through float to avoid SteamID64 precision loss
+                        sid_str = str(sid).split('.')[0]
+                        if sid_str and sid_str not in ("0", "nan"):
+                            steamids[str(name)] = sid_str
+
     # ---- Scoreboard ----
     stats: dict = {}
 
@@ -529,16 +1285,20 @@ def parse_demo(dem_path: str) -> dict:
         d_val  = s.get("deaths", 0)
         hs_val = s.get("hs", 0)
         scoreboard.append({
-            "name":    player,
-            "team":    str(s.get("team", "?")),
-            "kills":   k_val,
-            "deaths":  d_val,
-            "assists": s.get("assists", 0),
-            "kd":      round(k_val / d_val, 2) if d_val else float(k_val),
-            "hs_pct":  round(100 * hs_val / k_val) if k_val else 0,
-            "dmg":     s.get("dmg", 0),
+            "name":     player,
+            "steamid":  steamids.get(player),
+            "team":     str(s.get("team", "?")),
+            "kills":    k_val,
+            "deaths":   d_val,
+            "assists":  s.get("assists", 0),
+            "kd":       round(k_val / d_val, 2) if d_val else float(k_val),
+            "hs_pct":   round(100 * hs_val / k_val) if k_val else 0,
+            "dmg":      s.get("dmg", 0),
         })
     scoreboard.sort(key=lambda x: x["kills"], reverse=True)
+
+    # ---- Cosmetics (agent + weapon skins) ----
+    swag_breakdown = extract_cosmetics(dem_path)
 
     # ---- Tick data (player positions) ----
     session_id = str(uuid.uuid4())
@@ -551,18 +1311,19 @@ def parse_demo(dem_path: str) -> dict:
     }
 
     return {
-        "header":        header,
-        "ct_team":       ct_team,
-        "t_team":        t_team,
-        "ct_wins":       ct_wins,
-        "t_wins":        t_wins,
-        "total_rounds":  len(rounds),
-        "rounds":        rounds,
-        "kills":         kills,
-        "scoreboard":    scoreboard,
-        "aim_breakdown": aim_breakdown,
-        "session_id":    session_id,
-        "has_ticks":     bool(ticks_by_round),
+        "header":         header,
+        "ct_team":        ct_team,
+        "t_team":         t_team,
+        "ct_wins":        ct_wins,
+        "t_wins":         t_wins,
+        "total_rounds":   len(rounds),
+        "rounds":         rounds,
+        "kills":          kills,
+        "scoreboard":     scoreboard,
+        "aim_breakdown":  aim_breakdown,
+        "swag_breakdown": swag_breakdown,
+        "session_id":     session_id,
+        "has_ticks":      bool(ticks_by_round),
     }
 
 
@@ -594,17 +1355,24 @@ def api_parse():
     if not f.filename.lower().endswith(".dem"):
         return jsonify({"error": "File must be a .dem file"}), 400
 
+    log.info("parse: received upload — %s", f.filename)
     with tempfile.NamedTemporaryFile(suffix=".dem", delete=False) as tmp:
         tmp_path = tmp.name
         f.save(tmp_path)
 
+    _t0 = time.monotonic()
     try:
         data = parse_demo(tmp_path)
         data["filename"] = f.filename
         ticks = _session_cache.get(data["session_id"], {}).get("ticks", {})
         _db_save(data["session_id"], f.filename, data["header"]["map"], data, ticks)
+        elapsed = time.monotonic() - _t0
+        log.info("parse: completed %s — map=%s rounds=%s ticks=%s (%.2fs)",
+                 f.filename, data["header"].get("map"),
+                 data.get("total_rounds"), len(ticks), elapsed)
         return jsonify(data)
     except Exception as e:
+        log.error("parse: failed for %s — %s", f.filename, e, exc_info=True)
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
     finally:
@@ -679,6 +1447,14 @@ def api_demos_delete(demo_id):
     return jsonify({"error": "Demo not found"}), 404
 
 
+@app.route("/images/agents/<path:filename>")
+def serve_agent_image(filename):
+    path = IMAGES_DIR / "agents" / filename
+    if not path.exists():
+        return "", 404
+    return send_file(str(path))
+
+
 @app.route("/admin")
 def admin():
     return render_template("admin.html")
@@ -729,5 +1505,13 @@ def api_admin_schema():
     return jsonify(schema)
 
 
+_load_skin_names()
+
+threading.Thread(target=_cache_agent_images, daemon=True, name="agent-image-cache").start()
+
+log.info("startup complete — cs2demviewer ready")
+
 if __name__ == "__main__":
+    if _verbose:
+        log.info("Flask dev server starting on http://localhost:5000")
     app.run(debug=True, port=5000, threaded=True)

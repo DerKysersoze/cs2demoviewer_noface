@@ -1,0 +1,17 @@
+# Database
+demos.db
+
+# Downloaded/cached data files (large, regenerated at runtime)
+struct_db/
+images/
+skin_names_cache.json
+core.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Node
+package.json
+node_modules/

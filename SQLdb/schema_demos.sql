@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS demos (
+    id            TEXT    PRIMARY KEY,
+    filename      TEXT    NOT NULL,
+    map           TEXT    NOT NULL,
+    uploaded_at   TEXT    NOT NULL,
+    tickrate      TEXT,
+    duration      TEXT,
+    ct_team       TEXT,
+    t_team        TEXT,
+    ct_wins       INTEGER,
+    t_wins        INTEGER,
+    total_rounds  INTEGER,
+    session_id    TEXT,
+    has_ticks     INTEGER NOT NULL DEFAULT 0,
+    rounds        BLOB,
+    kills         BLOB,
+    scoreboard    BLOB,
+    aim_breakdown  BLOB,
+    swag_breakdown BLOB,
+    ticks_data    BLOB
+);

@@ -266,11 +266,25 @@
       <h3 style="margin-bottom:10px">Quick Queries</h3>
       <button class="quick-btn" onclick="setQuery('SELECT id, filename, map, uploaded_at FROM demos ORDER BY uploaded_at DESC;')">List demos</button>
       <button class="quick-btn" onclick="setQuery('SELECT COUNT(*) AS total_demos FROM demos;')">Count demos</button>
-      <button class="quick-btn" onclick="setQuery('SELECT id, filename, map, uploaded_at,\n  LENGTH(data) AS data_bytes,\n  LENGTH(ticks_data) AS ticks_bytes\nFROM demos ORDER BY uploaded_at DESC;')">Demo sizes</button>
       <button class="quick-btn" onclick="setQuery('SELECT map, COUNT(*) AS count\nFROM demos GROUP BY map ORDER BY count DESC;')">Demos by map</button>
       <button class="quick-btn" onclick="setQuery('SELECT name FROM sqlite_master WHERE type=\'table\';')">List tables</button>
       <button class="quick-btn" onclick="setQuery('PRAGMA integrity_check;')">Integrity check</button>
       <button class="quick-btn" onclick="setQuery('VACUUM;')">VACUUM</button>
+
+      <h3 style="margin-top:18px;margin-bottom:10px">Weapons &amp; Finishes</h3>
+      <button class="quick-btn" onclick="setQuery('SELECT weapon_name, COUNT(*) AS skin_count\nFROM skins\nGROUP BY weapon_name\nORDER BY skin_count DESC;')">Skins per weapon</button>
+      <button class="quick-btn" onclick="setQuery('SELECT rarity_name, COUNT(*) AS count\nFROM skins\nGROUP BY rarity_name\nORDER BY count DESC;')">Count by rarity</button>
+      <button class="quick-btn" onclick="setQuery('SELECT paint_index, name, weapon_name, rarity_name,\n  min_float, max_float\nFROM skins\nWHERE rarity_id = \'rarity_ancient_weapon\'\nORDER BY weapon_name, name;')">Covert (red) skins</button>
+      <button class="quick-btn" onclick="setQuery('SELECT paint_index, name, weapon_name, rarity_name,\n  min_float, max_float\nFROM skins\nWHERE rarity_id = \'rarity_legendary_weapon\'\nORDER BY weapon_name, name;')">Classified (pink) skins</button>
+      <button class="quick-btn" onclick="setQuery('SELECT paint_index, name, weapon_name, rarity_name\nFROM skins\nWHERE stattrak = 1\nORDER BY weapon_name, name;')">StatTrak skins</button>
+      <button class="quick-btn" onclick="setQuery('SELECT paint_index, name, weapon_name, rarity_name\nFROM skins\nWHERE souvenir = 1\nORDER BY weapon_name, name;')">Souvenir skins</button>
+      <button class="quick-btn" onclick="setQuery('SELECT paint_index, name, weapon_name, rarity_name, max_float\nFROM skins\nWHERE max_float <= 0.07\nORDER BY weapon_name, name;')">Factory New only skins</button>
+      <button class="quick-btn" onclick="setQuery('SELECT paint_index, name, weapon_name, rarity_name, min_float\nFROM skins\nWHERE min_float >= 0.45\nORDER BY weapon_name, name;')">Battle-Scarred only skins</button>
+      <button class="quick-btn" onclick="setQuery('SELECT paint_index, name, weapon_name, rarity_name,\n  min_float, max_float, stattrak, souvenir\nFROM skins\nWHERE weapon_name LIKE \'%AK-47%\'\nORDER BY rarity_name, name;')">AK-47 skins</button>
+      <button class="quick-btn" onclick="setQuery('SELECT paint_index, name, weapon_name, rarity_name,\n  min_float, max_float, stattrak, souvenir\nFROM skins\nWHERE weapon_name LIKE \'%AWP%\'\nORDER BY rarity_name, name;')">AWP skins</button>
+      <button class="quick-btn" onclick="setQuery('SELECT paint_index, name, weapon_name, rarity_name,\n  min_float, max_float, stattrak, souvenir\nFROM skins\nWHERE weapon_name LIKE \'%Knife%\' OR weapon_name LIKE \'%Karambit%\'\n  OR weapon_name LIKE \'%Bayonet%\' OR weapon_name LIKE \'%Dagger%\'\nORDER BY weapon_name, rarity_name, name;')">Knife skins</button>
+      <button class="quick-btn" onclick="setQuery('SELECT paint_index, name, weapon_name, rarity_name,\n  min_float, max_float, stattrak, souvenir\nFROM skins\nWHERE weapon_name LIKE \'%Glove%\' OR weapon_name LIKE \'%Wrap%\'\nORDER BY weapon_name, rarity_name, name;')">Glove skins</button>
+      <button class="quick-btn" onclick="setQuery('SELECT s.paint_index, s.name AS skin_name,\n  s.weapon_name, s.rarity_name,\n  s.min_float, s.max_float, s.stattrak\nFROM skins s\nWHERE s.stattrak = 1 AND s.rarity_id = \'rarity_ancient_weapon\'\nORDER BY s.weapon_name, s.name;')">StatTrak Covert skins</button>
     </div>
   </aside>
 

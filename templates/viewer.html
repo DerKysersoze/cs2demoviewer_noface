@@ -374,21 +374,38 @@
     <button class="tab-btn" onclick="switchTab('rounds', this)">Rounds</button>
     <button class="tab-btn" onclick="switchTab('killfeed', this)">Kill Feed</button>
     <button class="tab-btn" onclick="switchTab('aim', this)">Aim Breakdown</button>
+    <button class="tab-btn" onclick="switchTab('swag', this)">Swag Breakdown</button>
   </div>
 
   <!-- Scoreboard -->
   <div class="tab-panel active" id="tab-scoreboard">
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Player</th><th>Team</th>
-            <th class="r">K</th><th class="r">A</th><th class="r">D</th>
-            <th class="r">K/D</th><th class="r">HS%</th><th class="r">DMG</th>
-          </tr>
-        </thead>
-        <tbody id="scoreboard-body"></tbody>
-      </table>
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:280px">
+        <div style="padding:10px 14px 6px;font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ct)">Counter-Terrorists</div>
+        <div class="table-wrap" style="margin-bottom:0">
+          <table>
+            <thead><tr>
+              <th>Player</th>
+              <th class="r">K</th><th class="r">A</th><th class="r">D</th>
+              <th class="r">K/D</th><th class="r">HS%</th><th class="r">DMG</th>
+            </tr></thead>
+            <tbody id="scoreboard-ct"></tbody>
+          </table>
+        </div>
+      </div>
+      <div style="flex:1;min-width:280px">
+        <div style="padding:10px 14px 6px;font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t)">Terrorists</div>
+        <div class="table-wrap" style="margin-bottom:0">
+          <table>
+            <thead><tr>
+              <th>Player</th>
+              <th class="r">K</th><th class="r">A</th><th class="r">D</th>
+              <th class="r">K/D</th><th class="r">HS%</th><th class="r">DMG</th>
+            </tr></thead>
+            <tbody id="scoreboard-t"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -489,6 +506,16 @@
     <div id="aim-weapons" style="margin-top:14px"></div>
   </div>
 
+  <!-- Swag Breakdown -->
+  <div class="tab-panel" id="tab-swag">
+    <div class="aim-layout">
+      <div class="aim-player-list" id="swag-player-list"></div>
+      <div id="swag-detail" style="flex:1;min-width:0">
+        <div class="aim-card" style="color:var(--muted);font-size:.88rem">Select a player to view their loadout.</div>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /results -->
 
 <script>
@@ -515,22 +542,28 @@
       ['Tickrate', h.tickrate + ' Hz'], ['Duration', h.duration], ['Rounds', d.total_rounds],
     ].map(([k, v]) => `<div class="pill"><strong>${k}:</strong> ${v}</div>`).join('');
 
-    // Scoreboard
-    document.getElementById('scoreboard-body').innerHTML = d.scoreboard.map(p => {
-      const ct        = p.team.toUpperCase().includes('CT');
-      const badgeClass = ct ? 'badge-ct' : 'badge-t';
-      const kdClass   = p.kd >= 1.1 ? 'kd-good' : p.kd < 0.9 ? 'kd-bad' : 'kd-even';
-      return `<tr>
-        <td><strong>${esc(p.name)}</strong></td>
-        <td><span class="badge ${badgeClass}">${esc(p.team)}</span></td>
-        <td class="r">${p.kills}</td>
-        <td class="r">${p.assists}</td>
-        <td class="r">${p.deaths}</td>
-        <td class="r ${kdClass}">${p.kd.toFixed(2)}</td>
-        <td class="r">${p.hs_pct}%</td>
-        <td class="r">${p.dmg.toLocaleString()}</td>
-      </tr>`;
-    }).join('');
+    // Scoreboard — split by side
+    function scoreRows(players) {
+      return players.map(p => {
+        const kdClass  = p.kd >= 1.1 ? 'kd-good' : p.kd < 0.9 ? 'kd-bad' : 'kd-even';
+        const nameHtml = p.steamid
+          ? `<a href="https://steamcommunity.com/profiles/${esc(p.steamid)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline dotted;text-underline-offset:3px">${esc(p.name)}</a>`
+          : esc(p.name);
+        return `<tr>
+          <td><strong>${nameHtml}</strong></td>
+          <td class="r">${p.kills}</td>
+          <td class="r">${p.assists}</td>
+          <td class="r">${p.deaths}</td>
+          <td class="r ${kdClass}">${p.kd.toFixed(2)}</td>
+          <td class="r">${p.hs_pct}%</td>
+          <td class="r">${p.dmg.toLocaleString()}</td>
+        </tr>`;
+      }).join('');
+    }
+    const ctPlayers = d.scoreboard.filter(p => p.team.toUpperCase().includes('CT'));
+    const tPlayers  = d.scoreboard.filter(p => !p.team.toUpperCase().includes('CT'));
+    document.getElementById('scoreboard-ct').innerHTML = scoreRows(ctPlayers);
+    document.getElementById('scoreboard-t').innerHTML  = scoreRows(tPlayers);
 
     // Rounds table
     document.getElementById('rounds-body').innerHTML = d.rounds.map(r => {
@@ -554,6 +587,9 @@
 
     // Aim breakdown
     renderAimPlayerList(d.aim_breakdown || []);
+
+    // Swag breakdown
+    renderSwagBreakdown(d.swag_breakdown || []);
 
     // Kill feed
     allKills = d.kills;
@@ -800,6 +836,108 @@
       <td class="r">${w.kills}</td>
       <td class="r" style="color:var(--red)">${w.hs_kills}</td>
     </tr>`).join('');
+  }
+
+  // ── Swag Breakdown ──────────────────────────────────────────────────────────
+  const WEAR_COLOR = {
+    'Factory New':   '#4ade80',
+    'Minimal Wear':  '#86efac',
+    'Field-Tested':  '#fbbf24',
+    'Well-Worn':     '#fb923c',
+    'Battle-Scarred':'#f87171',
+  };
+
+  let swagData = [];
+
+  function renderSwagBreakdown(data) {
+    swagData = data || [];
+    const list = document.getElementById('swag-player-list');
+    if (!swagData.length) {
+      list.innerHTML = '';
+      document.getElementById('swag-detail').innerHTML =
+        '<div class="aim-card" style="color:var(--muted);font-size:.88rem">No cosmetic data found in this demo.</div>';
+      return;
+    }
+    list.innerHTML = swagData.map((p, i) => {
+      const side = p.team === 'CT' ? 'ct' : 't';
+      return `<button class="aim-player-btn" onclick="renderSwagPlayer(${i}, this)">
+        <span class="badge badge-${side}" style="margin-right:6px;font-size:.6rem">${p.team}</span>${esc(p.name)}
+      </button>`;
+    }).join('');
+  }
+
+  function renderSwagPlayer(idx, btn) {
+    document.querySelectorAll('#swag-player-list .aim-player-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    const p = swagData[idx];
+
+    function weaponRows(weapons) {
+      if (!weapons.length) return `<tr><td colspan="7" style="color:var(--muted);font-size:.82rem;padding:10px 14px">No skinned weapons</td></tr>`;
+      return weapons.map(w => {
+        const tierColor = WEAR_COLOR[w.wear_tier] || 'var(--muted)';
+        const skinCell  = w.skin_name
+          ? `<span style="color:var(--text)">${esc(w.skin_name)}</span>`
+          : `<span style="color:var(--muted)">Vanilla</span>`;
+        const wearCell  = w.wear != null
+          ? `<span style="color:${tierColor}">${w.wear_tier}</span><br><span style="color:var(--muted);font-size:.72rem">${w.wear}</span>`
+          : `<span style="color:var(--muted)">—</span>`;
+        const nameCell  = w.custom_name
+          ? `${esc(w.item_name)}<br><span style="color:var(--ct);font-size:.72rem">"${esc(w.custom_name)}"</span>`
+          : esc(w.item_name);
+        const stCell    = w.stattrak != null
+          ? `<span style="color:#e8a400;font-size:.78rem">ST™ ${w.stattrak.toLocaleString()}</span>`
+          : `<span style="color:var(--muted)">—</span>`;
+        const seedCell  = w.paint_seed != null ? w.paint_seed : '—';
+        return `<tr>
+          <td style="white-space:nowrap">${weaponIcon(w.item_name)} <span style="font-size:.84rem">${nameCell}</span></td>
+          <td>${skinCell}</td>
+          <td>${wearCell}</td>
+          <td class="r" style="color:var(--muted);font-size:.8rem">${seedCell}</td>
+          <td class="r">${stCell}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function sideTable(label, color, agent, weapons) {
+      const agentRow = agent
+        ? `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);margin-bottom:4px">
+             <span style="font-size:.65rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);min-width:46px">Agent</span>
+             <span style="font-size:.88rem">${esc(agent.item_name)}</span>
+           </div>`
+        : '';
+      return `<div class="aim-card" style="margin-bottom:14px">
+        <div style="font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+                    color:${color};margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:6px">${label}</div>
+        ${agentRow}
+        <div class="table-wrap" style="border:none;border-radius:0;margin:0">
+          <table>
+            <thead><tr>
+              <th>Weapon</th>
+              <th>Skin</th>
+              <th>Wear</th>
+              <th class="r">Seed</th>
+              <th class="r">StatTrak</th>
+            </tr></thead>
+            <tbody>${weaponRows(weapons)}</tbody>
+          </table>
+        </div>
+      </div>`;
+    }
+
+    const nameHtml = p.steamid
+      ? `<a href="https://steamcommunity.com/profiles/${esc(p.steamid)}" target="_blank" rel="noopener"
+           style="color:inherit;text-decoration:underline dotted;text-underline-offset:3px">${esc(p.name)}</a>`
+      : esc(p.name);
+    const badgeSide = p.team === 'CT' ? 'ct' : 't';
+
+    document.getElementById('swag-detail').innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+        <span class="badge badge-${badgeSide}">${p.team}</span>
+        <strong style="font-size:1rem">${nameHtml}</strong>
+      </div>
+      ${sideTable('CT Side', 'var(--ct)', p.ct_agent, p.ct_weapons)}
+      ${sideTable('T Side',  'var(--t)',  p.t_agent,  p.t_weapons)}
+    `;
   }
 
   function renderAimPlayerList(data) {
