@@ -357,17 +357,36 @@ def api_map_info(map_name):
     return jsonify(_get_map_bounds(map_name))
 
 
+@app.route("/api/maps_ready")
+def api_maps_ready():
+    import awpy.data
+    maps_dir = awpy.data.MAPS_DIR
+    ready = maps_dir.exists() and any(maps_dir.glob("*.png"))
+    return jsonify({"ready": ready})
+
+
+@app.route("/api/download_maps", methods=["POST"])
+def api_download_maps():
+    try:
+        import awpy.data, awpy.data.utils
+        awpy.data.utils.create_data_dir_if_not_exists()
+        awpy.data.utils.fetch_resource("maps", awpy.data.CURRENT_BUILD_ID)
+        return jsonify({"success": True})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/map_image/<map_name>")
 def api_map_image(map_name):
-    import awpy
-    awpy_dir = os.path.dirname(os.path.abspath(awpy.__file__))
-    for subdir in ["data/maps", "data", "maps"]:
-        for ext in ["png", "jpg", "jpeg"]:
-            img_path = os.path.join(awpy_dir, subdir, f"{map_name}.{ext}")
-            if os.path.exists(img_path):
-                return send_file(img_path, mimetype=f"image/{ext}")
+    import awpy.data
+    maps_dir = awpy.data.MAPS_DIR
+    for name in [map_name, f"{map_name}_lower"]:
+        img_path = maps_dir / f"{name}.png"
+        if img_path.exists():
+            return send_file(str(img_path), mimetype="image/png")
     return "", 404
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5000, threaded=True)
