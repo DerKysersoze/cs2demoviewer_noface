@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CS2 Demo Viewer</title>
+  <title>CS2 Demo Viewer NoFace</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -126,12 +126,17 @@
       text-align: left;
       font-size: .75rem;
       font-weight: 700;
+      user-select: none;
       letter-spacing: .06em;
       text-transform: uppercase;
       color: var(--muted);
       white-space: nowrap;
     }
     thead th.r { text-align: right; }
+    thead th.sortable { cursor: pointer; }
+    thead th.sortable:hover { color: var(--text); }
+    thead th.sort-asc::after  { content: ' ▲'; color: var(--ct); font-size: .65rem; }
+    thead th.sort-desc::after { content: ' ▼'; color: var(--ct); font-size: .65rem; }
     tbody tr { border-top: 1px solid var(--border); transition: background .1s; }
     tbody tr:hover { background: var(--surface2); }
     td   { padding: 9px 14px; white-space: nowrap; }
@@ -769,6 +774,33 @@
     Gear: '#94a3b8', Generic: '#6b7280',
   };
   let aimData = [];
+  let currentWpnRows = [];
+  let wpnSortCol = 'kills';
+  let wpnSortDir = -1; // -1 = desc, 1 = asc
+
+  function renderWpnTable() {
+    const sorted = [...currentWpnRows].sort((a, b) => {
+      const av = a[wpnSortCol] ?? -Infinity;
+      const bv = b[wpnSortCol] ?? -Infinity;
+      if (typeof av === 'string') return wpnSortDir * av.localeCompare(bv);
+      return wpnSortDir * (bv - av);
+    });
+    document.querySelectorAll('#wpn-table th.sortable').forEach(th => {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.dataset.col === wpnSortCol)
+        th.classList.add(wpnSortDir === -1 ? 'sort-desc' : 'sort-asc');
+    });
+    document.getElementById('wpn-tbody').innerHTML = sorted.map(w => `<tr>
+      <td>${weaponIcon(w.weapon)}</td>
+      <td class="r">${w.shots ?? '—'}</td>
+      <td class="r">${w.hits}</td>
+      <td class="r">${w.acc != null ? w.acc + '%' : '—'}</td>
+      <td class="r">${w.dmg.toLocaleString()}</td>
+      <td class="r">${w.avgDmg}</td>
+      <td class="r">${w.kills}</td>
+      <td class="r" style="color:var(--red)">${w.hs_kills}</td>
+    </tr>`).join('');
+  }
 
   function renderAimPlayerList(data) {
     aimData = data;
@@ -798,6 +830,10 @@
             <span class="aim-stat-val" style="color:var(--red)">${p.hs_hit_pct}%</span><span class="aim-stat-lbl">Headshot Hit %</span></div>
           <div class="aim-stat" data-tip="Kill / Assist / Survived / Traded.\n% of rounds where the player:\n• got a kill (K)\n• got an assist (A)\n• survived the round (S)\n• was killed but their killer\n  died within 5 s (T).\nGood players typically 70 %+.">
             <span class="aim-stat-val" style="color:var(--green)">${p.kast}%</span><span class="aim-stat-lbl">KAST</span></div>
+          <div class="aim-stat" data-tip="Total bullets fired (grenades\nexcluded). Counted from the\nshots event in the demo file.">
+            <span class="aim-stat-val">${p.total_shots ?? '—'}</span><span class="aim-stat-lbl">Total Shots</span></div>
+          ${p.accuracy != null ? `<div class="aim-stat" data-tip="Total hits ÷ total shots × 100.\nOnly bullet weapons counted;\ngrenades are excluded.">
+            <span class="aim-stat-val" style="color:var(--ct)">${p.accuracy}%</span><span class="aim-stat-lbl">Accuracy</span></div>` : ''}
         </div>
       </div>`;
 
@@ -822,39 +858,49 @@
         ${hgRows || '<span style="color:var(--muted)">No data</span>'}
       </div>`;
 
-    // Weapon table
-    const wpnRows = p.weapons.map(w => {
-      const avgDmg = w.hits ? Math.round(w.dmg / w.hits) : 0;
-      return `<tr>
-        <td>${weaponIcon(w.weapon)}</td>
-        <td class="r">${w.hits}</td>
-        <td class="r">${w.dmg.toLocaleString()}</td>
-        <td class="r">${avgDmg}</td>
-        <td class="r">${w.kills}</td>
-        <td class="r" style="color:var(--red)">${w.hs_kills}</td>
-      </tr>`;
-    }).join('');
+    // Weapon table — build enriched rows, then render via sortable helper
+    currentWpnRows = p.weapons.map(w => ({
+      weapon:  w.weapon,
+      shots:   w.shots ?? null,
+      hits:    w.hits,
+      acc:     (w.shots && w.hits) ? Math.min(100, Math.round(100 * w.hits / w.shots)) : null,
+      dmg:     w.dmg,
+      avgDmg:  w.hits ? Math.round(w.dmg / w.hits) : 0,
+      kills:   w.kills,
+      hs_kills: w.hs_kills,
+    }));
+    wpnSortCol = 'kills';
+    wpnSortDir = -1;
 
-    const weapons = `
+    document.getElementById('aim-detail').innerHTML  = summary + hitGroups;
+    document.getElementById('aim-weapons').innerHTML = `
       <div class="aim-card" style="padding:0;overflow:hidden">
         <h4 style="padding:14px 16px 10px">Per-Weapon Stats</h4>
         <div class="table-wrap" style="border:none;border-radius:0;margin-bottom:0">
-          <table>
+          <table id="wpn-table">
             <thead><tr>
-              <th>Weapon</th>
-              <th class="r">Hits</th>
-              <th class="r">Dmg</th>
-              <th class="r">Avg Dmg</th>
-              <th class="r">Kills</th>
-              <th class="r">HS Kills</th>
+              <th class="sortable" data-col="weapon">Weapon</th>
+              <th class="sortable r" data-col="shots">Shots</th>
+              <th class="sortable r" data-col="hits">Hits</th>
+              <th class="sortable r" data-col="acc">Acc %</th>
+              <th class="sortable r" data-col="dmg">Dmg</th>
+              <th class="sortable r" data-col="avgDmg">Avg Dmg</th>
+              <th class="sortable r" data-col="kills">Kills</th>
+              <th class="sortable r" data-col="hs_kills">HS Kills</th>
             </tr></thead>
-            <tbody>${wpnRows}</tbody>
+            <tbody id="wpn-tbody"></tbody>
           </table>
         </div>
       </div>`;
-
-    document.getElementById('aim-detail').innerHTML  = summary + hitGroups;
-    document.getElementById('aim-weapons').innerHTML = weapons;
+    document.querySelectorAll('#wpn-table th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.col;
+        if (wpnSortCol === col) wpnSortDir *= -1;
+        else { wpnSortCol = col; wpnSortDir = -1; }
+        renderWpnTable();
+      });
+    });
+    renderWpnTable();
   }
 
   // ── Map viewer ───────────────────────────────────────────────

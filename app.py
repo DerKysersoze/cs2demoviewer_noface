@@ -311,9 +311,19 @@ def _calc_kast(kills: list, rounds: list) -> dict:
     return {p: round(100 * kast_count[p] / total_rounds) for p in players}
 
 
-def _extract_aim(kills: list, damages_df, rounds: list) -> list:
-    """Per-player aim breakdown: hit groups, avg damage, per-weapon stats, KAST."""
+# Weapons that fire projectiles but aren't bullets — excluded from accuracy
+_GRENADE_WEAPONS = {
+    "flashbang", "smokegrenade", "hegrenade", "molotov",
+    "incgrenade", "decoy", "tagrenade", "c4",
+}
+
+
+def _extract_aim(kills: list, damages_df, rounds: list, shots_df=None) -> list:
+    """Per-player aim breakdown: hit groups, avg damage, per-weapon stats, KAST, accuracy."""
     players: dict = {}
+
+    def _norm_wpn(s):
+        return str(s or "?").lower().replace("weapon_", "").strip()
 
     if damages_df is not None:
         for _, row in damages_df.iterrows():
@@ -326,14 +336,14 @@ def _extract_aim(kills: list, damages_df, rounds: list) -> list:
             raw_hg = row.get("hitgroup") or 0
             hg_key = str(raw_hg).lower() if isinstance(raw_hg, str) else raw_hg
             hg  = _HITGROUP.get(hg_key, _HITGROUP.get(raw_hg, "Generic"))
-            wpn = str(row.get("weapon") or "?")
+            wpn = _norm_wpn(row.get("weapon"))
 
             p = players.setdefault(att, {"hit_groups": {}, "dmg_groups": {}, "weapons": {}, "total_hits": 0, "total_dmg": 0})
             p["hit_groups"][hg]  = p["hit_groups"].get(hg, 0) + 1
             p["dmg_groups"][hg]  = p["dmg_groups"].get(hg, 0) + dmg
             p["total_hits"]     += 1
             p["total_dmg"]      += dmg
-            w = p["weapons"].setdefault(wpn, {"hits": 0, "dmg": 0, "kills": 0, "hs_kills": 0})
+            w = p["weapons"].setdefault(wpn, {"hits": 0, "dmg": 0, "kills": 0, "hs_kills": 0, "shots": 0})
             w["hits"] += 1
             w["dmg"]  += dmg
 
@@ -342,11 +352,31 @@ def _extract_aim(kills: list, damages_df, rounds: list) -> list:
         if not att or att in ("nan", "?"):
             continue
         if att in players:
-            wpn = k.get("weapon", "?")
-            w = players[att]["weapons"].setdefault(wpn, {"hits": 0, "dmg": 0, "kills": 0, "hs_kills": 0})
+            wpn = _norm_wpn(k.get("weapon", "?"))
+            w = players[att]["weapons"].setdefault(wpn, {"hits": 0, "dmg": 0, "kills": 0, "hs_kills": 0, "shots": 0})
             w["kills"] += 1
             if k.get("headshot"):
                 w["hs_kills"] += 1
+
+    # Build case-insensitive player name index for cross-DataFrame matching
+    name_idx = {n.lower(): n for n in players}
+
+    # ---- Count shots fired (bullets only, no grenades) ----
+    player_shots: dict = {n: {} for n in players}  # {canonical_name: {weapon: count}}
+    if shots_df is not None:
+        for _, row in shots_df.iterrows():
+            pname = row.get("player_name")
+            if not pname or str(pname) == "nan":
+                continue
+            wpn = _norm_wpn(row.get("weapon"))
+            if wpn in _GRENADE_WEAPONS:
+                continue
+            canonical = name_idx.get(str(pname).lower())
+            if canonical is None:
+                continue  # player not in damages data, skip
+            player_shots[canonical][wpn] = player_shots[canonical].get(wpn, 0) + 1
+            w = players[canonical]["weapons"].setdefault(wpn, {"hits": 0, "dmg": 0, "kills": 0, "hs_kills": 0, "shots": 0})
+            w["shots"] += 1
 
     kast = _calc_kast(kills, rounds)
 
@@ -354,6 +384,7 @@ def _extract_aim(kills: list, damages_df, rounds: list) -> list:
     for name, p in players.items():
         th = p["total_hits"]
         td = p["total_dmg"]
+        total_shots = sum(player_shots.get(name, {}).values())
         weapons_sorted = sorted(
             [{"weapon": w, **s} for w, s in p["weapons"].items()],
             key=lambda x: x["kills"], reverse=True
@@ -361,6 +392,8 @@ def _extract_aim(kills: list, damages_df, rounds: list) -> list:
         result.append({
             "name":          name,
             "total_hits":    th,
+            "total_shots":   total_shots,
+            "accuracy":      min(100, round(100 * th / total_shots)) if total_shots else None,
             "total_dmg":     td,
             "avg_dmg":       round(td / th, 1) if th else 0,
             "hs_hit_pct":    round(100 * p["hit_groups"].get("Head", 0) / th) if th else 0,
@@ -378,6 +411,7 @@ def parse_demo(dem_path: str) -> dict:
 
     demo = Demo(dem_path)
     demo.parse()
+
 
     # ---- Header ----
     h = demo.header or {}
@@ -486,7 +520,8 @@ def parse_demo(dem_path: str) -> dict:
                 inc(str(att), "dmg", dmg)
 
     # ---- Aim breakdown ----
-    aim_breakdown = _extract_aim(kills, damages_df, rounds)
+    shots_df = _to_pd(getattr(demo, "shots", None))
+    aim_breakdown = _extract_aim(kills, damages_df, rounds, shots_df)
 
     scoreboard = []
     for player, s in stats.items():
