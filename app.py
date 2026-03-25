@@ -5,7 +5,11 @@ Run: python app.py
 Then open http://localhost:5000
 """
 
+import datetime
+import json
 import os
+import sqlite3
+import zlib
 import tempfile
 import traceback
 import uuid
@@ -15,6 +19,103 @@ from flask import Flask, jsonify, render_template, request, send_file
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024  # 512 MB
+
+# ── SQLite demo history ────────────────────────────────────────────────────────
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demos.db")
+
+
+def _db_init():
+    con = sqlite3.connect(DB_PATH)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS demos (
+            id          TEXT PRIMARY KEY,
+            filename    TEXT NOT NULL,
+            map         TEXT NOT NULL,
+            uploaded_at TEXT NOT NULL,
+            data        TEXT NOT NULL,
+            ticks_data  BLOB
+        )
+    """)
+    # Migrate existing databases that pre-date the ticks_data column
+    try:
+        con.execute("ALTER TABLE demos ADD COLUMN ticks_data BLOB")
+    except sqlite3.OperationalError:
+        pass  # column already exists
+    con.commit()
+    con.close()
+
+
+def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
+             ticks_by_round: dict = None):
+    storable = dict(data_dict)
+    storable["has_ticks"] = bool(ticks_by_round)
+    # session_id is kept so _db_get can restore the cache entry
+    ticks_blob = None
+    if ticks_by_round:
+        ticks_blob = sqlite3.Binary(
+            zlib.compress(json.dumps(ticks_by_round, ensure_ascii=False).encode(), level=6)
+        )
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        "INSERT OR REPLACE INTO demos (id, filename, map, uploaded_at, data, ticks_data)"
+        " VALUES (?,?,?,?,?,?)",
+        (
+            demo_id,
+            filename,
+            map_name,
+            datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            json.dumps(storable, ensure_ascii=False),
+            ticks_blob,
+        ),
+    )
+    con.commit()
+    con.close()
+
+
+def _db_list() -> list:
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT id, filename, map, uploaded_at FROM demos ORDER BY uploaded_at DESC"
+    ).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+
+def _db_get(demo_id: str):
+    con = sqlite3.connect(DB_PATH)
+    row = con.execute("SELECT data, ticks_data FROM demos WHERE id = ?", (demo_id,)).fetchone()
+    con.close()
+    if not row:
+        return None
+    data = json.loads(row[0])
+    if row[1]:
+        # Decompress and restore tick data to the session cache
+        ticks_by_round = {
+            int(k): v
+            for k, v in json.loads(zlib.decompress(bytes(row[1])).decode()).items()
+        }
+        session_id = data.get("session_id")
+        if session_id:
+            if len(_session_cache) >= MAX_SESSIONS:
+                _session_cache.popitem(last=False)
+            _session_cache[session_id] = {
+                "ticks":    ticks_by_round,
+                "map_name": data.get("header", {}).get("map", ""),
+            }
+        data["has_ticks"] = True
+    return data
+
+
+def _db_delete(demo_id: str) -> bool:
+    con = sqlite3.connect(DB_PATH)
+    cur = con.execute("DELETE FROM demos WHERE id = ?", (demo_id,))
+    con.commit()
+    con.close()
+    return cur.rowcount > 0
+
+
+_db_init()
 
 # ── Session cache for tick data (keep last 3 parsed demos in memory) ──────────
 _session_cache = OrderedDict()
@@ -465,6 +566,8 @@ def api_parse():
     try:
         data = parse_demo(tmp_path)
         data["filename"] = f.filename
+        ticks = _session_cache.get(data["session_id"], {}).get("ticks", {})
+        _db_save(data["session_id"], f.filename, data["header"]["map"], data, ticks)
         return jsonify(data)
     except Exception as e:
         traceback.print_exc()
@@ -519,6 +622,76 @@ def api_map_image(map_name):
         if img_path.exists():
             return send_file(str(img_path), mimetype="image/png")
     return "", 404
+
+
+@app.route("/api/demos")
+def api_demos_list():
+    return jsonify(_db_list())
+
+
+@app.route("/api/demos/<demo_id>")
+def api_demos_get(demo_id):
+    data = _db_get(demo_id)
+    if data is None:
+        return jsonify({"error": "Demo not found"}), 404
+    return jsonify(data)
+
+
+@app.route("/api/demos/<demo_id>", methods=["DELETE"])
+def api_demos_delete(demo_id):
+    if _db_delete(demo_id):
+        return jsonify({"deleted": demo_id})
+    return jsonify({"error": "Demo not found"}), 404
+
+
+@app.route("/admin")
+def admin():
+    return render_template("admin.html")
+
+
+@app.route("/api/admin/query", methods=["POST"])
+def api_admin_query():
+    sql = (request.json or {}).get("sql", "").strip()
+    if not sql:
+        return jsonify({"error": "No query provided"}), 400
+    try:
+        import time
+        con = sqlite3.connect(DB_PATH)
+        con.row_factory = sqlite3.Row
+        t0 = time.monotonic()
+        cur = con.execute(sql)
+        elapsed = round((time.monotonic() - t0) * 1000, 2)
+        if cur.description:
+            columns = [d[0] for d in cur.description]
+            rows = [list(r) for r in cur.fetchall()]
+            con.close()
+            return jsonify({"columns": columns, "rows": rows,
+                            "rowcount": len(rows), "elapsed_ms": elapsed})
+        else:
+            con.commit()
+            rowcount = cur.rowcount
+            con.close()
+            return jsonify({"columns": [], "rows": [],
+                            "rowcount": rowcount, "elapsed_ms": elapsed,
+                            "message": f"{rowcount} row(s) affected"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/admin/schema")
+def api_admin_schema():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    tables = [r["name"] for r in con.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+    ).fetchall()]
+    schema = {}
+    for tbl in tables:
+        cols = con.execute(f"PRAGMA table_info({tbl})").fetchall()
+        schema[tbl] = [{"cid": c["cid"], "name": c["name"], "type": c["type"],
+                        "notnull": c["notnull"], "pk": c["pk"]} for c in cols]
+    con.close()
+    return jsonify(schema)
 
 
 if __name__ == "__main__":
