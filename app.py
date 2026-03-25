@@ -1,0 +1,373 @@
+#!/usr/bin/env python3
+"""
+CS2 Demo Viewer - Web Backend
+Run: python app.py
+Then open http://localhost:5000
+"""
+
+import os
+import tempfile
+import traceback
+import uuid
+from collections import OrderedDict
+
+from flask import Flask, jsonify, render_template, request, send_file
+
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024  # 512 MB
+
+# ── Session cache for tick data (keep last 3 parsed demos in memory) ──────────
+_session_cache = OrderedDict()
+MAX_SESSIONS = 3
+TICK_SAMPLE = 8   # keep 1 in every N ticks (~8-16 fps depending on tickrate)
+
+# Hardcoded map bounds (pos_x, pos_y = top-left corner in game units; scale = units/pixel)
+MAP_BOUNDS = {
+    "de_dust2":    {"pos_x": -2476, "pos_y":  3239, "scale": 4.4},
+    "de_mirage":   {"pos_x": -3230, "pos_y":  1713, "scale": 5.0},
+    "de_inferno":  {"pos_x": -2087, "pos_y":  3870, "scale": 4.9},
+    "de_nuke":     {"pos_x": -3453, "pos_y":  2887, "scale": 7.0},
+    "de_ancient":  {"pos_x": -2953, "pos_y":  2164, "scale": 5.0},
+    "de_anubis":   {"pos_x": -2796, "pos_y":  3328, "scale": 5.22},
+    "de_vertigo":  {"pos_x": -3168, "pos_y":  1762, "scale": 4.0},
+    "de_overpass": {"pos_x": -4831, "pos_y":  1781, "scale": 5.2},
+}
+
+
+def _to_pd(df):
+    """Convert a Polars or pandas DataFrame to pandas, or return None if empty/missing."""
+    if df is None:
+        return None
+    try:
+        import polars as pl
+        if isinstance(df, pl.DataFrame):
+            return df.to_pandas() if not df.is_empty() else None
+    except ImportError:
+        pass
+    try:
+        if df.empty:
+            return None
+        return df
+    except AttributeError:
+        return None
+
+
+def _col(row, *names, default=None):
+    """Return the first non-null value among the given column names."""
+    for name in names:
+        try:
+            v = row.get(name)
+            if v is not None and str(v) != "nan":
+                return v
+        except Exception:
+            pass
+    return default
+
+
+def _safe(val, default="?"):
+    try:
+        if val is None or (isinstance(val, float) and val != val):
+            return default
+        return val
+    except Exception:
+        return default
+
+
+def _get_map_bounds(map_name: str) -> dict:
+    """Return pos_x, pos_y, scale for the map. Tries awpy first, falls back to hardcoded."""
+    try:
+        from awpy.data import MAP_DATA
+        if map_name in MAP_DATA:
+            d = MAP_DATA[map_name]
+            return {"pos_x": d["pos_x"], "pos_y": d["pos_y"], "scale": d["scale"]}
+    except Exception:
+        pass
+    return MAP_BOUNDS.get(map_name, {"pos_x": -2476, "pos_y": 3239, "scale": 4.4})
+
+
+def extract_ticks(demo) -> dict:
+    """
+    Returns {round_num: [{"t": tick, "p": [{"n": name, "x": x, "y": y, "hp": hp, "alive": bool, "side": side}]}]}
+    Downsampled by TICK_SAMPLE for reasonable data size.
+    """
+    ticks_df = _to_pd(getattr(demo, "ticks", None))
+    if ticks_df is None:
+        return {}
+
+    cols = list(ticks_df.columns)
+    print(f"[INFO] ticks columns: {cols[:20]}")
+
+    name_col  = next((c for c in ["name", "player_name", "steamid"] if c in cols), None)
+    x_col     = next((c for c in ["X", "x", "pos_x"] if c in cols), None)
+    y_col     = next((c for c in ["Y", "y", "pos_y"] if c in cols), None)
+    hp_col    = next((c for c in ["health", "hp", "Health"] if c in cols), None)
+    alive_col = next((c for c in ["is_alive", "alive", "isAlive"] if c in cols), None)
+    side_col  = next((c for c in ["side", "team_side", "Side"] if c in cols), None)
+
+    if not (name_col and x_col and y_col and "tick" in cols and "round_num" in cols):
+        print(f"[WARN] Missing required tick columns — map tracker disabled")
+        return {}
+
+    import pandas as pd
+    import numpy as np
+
+    result = {}
+    for round_num, rdf in ticks_df.groupby("round_num"):
+        all_ticks = np.sort(rdf["tick"].unique())
+        sampled   = set(all_ticks[::TICK_SAMPLE])
+        sdf       = rdf[rdf["tick"].isin(sampled)].copy()
+
+        frames = []
+        for tick_val, tdf in sdf.groupby("tick"):
+            players = []
+            for _, row in tdf.iterrows():
+                try:
+                    hp = int(row[hp_col]) if hp_col and not pd.isna(row[hp_col]) else 100
+                except Exception:
+                    hp = 100
+                try:
+                    alive = bool(row[alive_col]) if alive_col and not pd.isna(row[alive_col]) else hp > 0
+                except Exception:
+                    alive = hp > 0
+                try:
+                    px = float(row[x_col]) if not pd.isna(row[x_col]) else 0.0
+                    py = float(row[y_col]) if not pd.isna(row[y_col]) else 0.0
+                except Exception:
+                    px = py = 0.0
+                players.append({
+                    "n":     str(row[name_col]),
+                    "x":     px,
+                    "y":     py,
+                    "hp":    hp,
+                    "alive": alive,
+                    "side":  str(row[side_col]) if side_col and not pd.isna(row.get(side_col, None)) else "?",
+                })
+            frames.append({"t": int(tick_val), "p": players})
+
+        result[int(round_num)] = sorted(frames, key=lambda f: f["t"])
+
+    return result
+
+
+def parse_demo(dem_path: str) -> dict:
+    from awpy import Demo
+
+    demo = Demo(dem_path)
+    demo.parse()
+
+    # ---- Header ----
+    h = demo.header or {}
+    header = {
+        "map":      _safe(h.get("map_name"), "unknown"),
+        "tickrate": _safe(h.get("tick_rate"), "?"),
+        "ticks":    _safe(h.get("ticks_played"), "?"),
+        "client":   _safe(h.get("client_name"), "?"),
+        "server":   _safe(h.get("server_name"), "?"),
+        "duration": _duration(h),
+    }
+
+    # ---- Build per-round side mapping from kills ----
+    kills_df = _to_pd(demo.kills)
+    round_sides = {}
+    ct_team = "CT"
+    t_team  = "T"
+    if kills_df is not None and "ct_side" in kills_df.columns:
+        for _, row in kills_df.iterrows():
+            rnum = int(row.get("round_num", 0) or 0)
+            if rnum not in round_sides:
+                round_sides[rnum] = {
+                    "ct": str(row.get("ct_side") or "CT"),
+                    "t":  str(row.get("t_side")  or "T"),
+                }
+        if round_sides:
+            last   = round_sides[max(round_sides)]
+            ct_team = last["ct"]
+            t_team  = last["t"]
+
+    # ---- Rounds ----
+    rounds = []
+    rounds_df = _to_pd(demo.rounds)
+    if rounds_df is not None:
+        ct_score = t_score = 0
+        for _, row in rounds_df.iterrows():
+            rnum   = int(row.get("round_num", 0) or 0)
+            winner = str(row.get("winner", "?") or "?")
+            sides  = round_sides.get(rnum, {"ct": ct_team, "t": t_team})
+            if winner == sides["ct"]:
+                winner_side = "CT"; ct_score += 1
+            elif winner == sides["t"]:
+                winner_side = "T";  t_score  += 1
+            else:
+                winner_side = winner
+            reason = str(row.get("reason", "?") or "?").replace("_", " ").title()
+            rounds.append({
+                "round_num":   rnum,
+                "winner_side": winner_side,
+                "reason":      reason,
+                "ct_score":    ct_score,
+                "t_score":     t_score,
+            })
+
+    ct_wins = sum(1 for r in rounds if r["winner_side"] == "CT")
+    t_wins  = sum(1 for r in rounds if r["winner_side"] == "T")
+
+    # ---- Kills ----
+    kills = []
+    if kills_df is not None:
+        for _, row in kills_df.iterrows():
+            attacker_side = str(row.get("attacker_side") or "")
+            victim_side   = str(row.get("victim_side")   or "")
+            rnum          = int(row.get("round_num", 0) or 0)
+            sides         = round_sides.get(rnum, {"ct": ct_team, "t": t_team})
+            att_team = sides["ct"] if attacker_side.upper() == "CT" else sides["t"]
+            vic_team = sides["ct"] if victim_side.upper()   == "CT" else sides["t"]
+            kills.append({
+                "tick":          int(row.get("tick", 0) or 0),
+                "round_num":     rnum,
+                "attacker":      str(row.get("attacker_name") or "?"),
+                "attacker_team": att_team,
+                "victim":        str(row.get("victim_name") or "?"),
+                "victim_team":   vic_team,
+                "weapon":        str(row.get("weapon") or "?"),
+                "headshot":      bool(row.get("headshot")),
+                "through_smoke": bool(row.get("thrusmoke")),
+                "no_scope":      bool(row.get("noscope")),
+                "penetrated":    bool(row.get("penetrated")),
+            })
+
+    # ---- Scoreboard ----
+    stats: dict = {}
+
+    def inc(player, key, amount=1):
+        entry = stats.setdefault(player, {})
+        entry[key] = entry.get(key, 0) + amount
+
+    for k in kills:
+        att, vic = k["attacker"], k["victim"]
+        if att and att != "nan" and att != "?":
+            inc(att, "kills")
+            if k["headshot"]: inc(att, "hs")
+            stats[att].setdefault("team", k["attacker_team"])
+        if vic and vic != "nan" and vic != "?":
+            inc(vic, "deaths")
+            stats.setdefault(vic, {}).setdefault("team", k["victim_team"])
+
+    damages_df = _to_pd(demo.damages)
+    if damages_df is not None:
+        for _, row in damages_df.iterrows():
+            att = row.get("attacker_name")
+            if att and str(att) != "nan":
+                dmg = int(row.get("dmg_health_real") or row.get("dmg_health") or 0)
+                inc(str(att), "dmg", dmg)
+
+    scoreboard = []
+    for player, s in stats.items():
+        k_val  = s.get("kills", 0)
+        d_val  = s.get("deaths", 0)
+        hs_val = s.get("hs", 0)
+        scoreboard.append({
+            "name":    player,
+            "team":    str(s.get("team", "?")),
+            "kills":   k_val,
+            "deaths":  d_val,
+            "assists": s.get("assists", 0),
+            "kd":      round(k_val / d_val, 2) if d_val else float(k_val),
+            "hs_pct":  round(100 * hs_val / k_val) if k_val else 0,
+            "dmg":     s.get("dmg", 0),
+        })
+    scoreboard.sort(key=lambda x: x["kills"], reverse=True)
+
+    # ---- Tick data (player positions) ----
+    session_id = str(uuid.uuid4())
+    ticks_by_round = extract_ticks(demo)
+    if len(_session_cache) >= MAX_SESSIONS:
+        _session_cache.popitem(last=False)
+    _session_cache[session_id] = {
+        "ticks":    ticks_by_round,
+        "map_name": header["map"],
+    }
+
+    return {
+        "header":       header,
+        "ct_team":      ct_team,
+        "t_team":       t_team,
+        "ct_wins":      ct_wins,
+        "t_wins":       t_wins,
+        "total_rounds": len(rounds),
+        "rounds":       rounds,
+        "kills":        kills,
+        "scoreboard":   scoreboard,
+        "session_id":   session_id,
+        "has_ticks":    bool(ticks_by_round),
+    }
+
+
+def _duration(h: dict) -> str:
+    try:
+        return f"{float(h['playback_time']):.1f}s"
+    except Exception:
+        try:
+            return f"{int(h['ticks_played']) / int(h['tick_rate']):.1f}s"
+        except Exception:
+            return "?"
+
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+@app.route("/api/parse", methods=["POST"])
+def api_parse():
+    if "demo" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+    f = request.files["demo"]
+    if not f.filename.lower().endswith(".dem"):
+        return jsonify({"error": "File must be a .dem file"}), 400
+
+    with tempfile.NamedTemporaryFile(suffix=".dem", delete=False) as tmp:
+        tmp_path = tmp.name
+        f.save(tmp_path)
+
+    try:
+        data = parse_demo(tmp_path)
+        data["filename"] = f.filename
+        return jsonify(data)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
+@app.route("/api/ticks/<session_id>/<int:round_num>")
+def api_ticks(session_id, round_num):
+    session = _session_cache.get(session_id)
+    if not session:
+        return jsonify({"error": "Session expired — please re-upload the demo"}), 404
+    frames = session["ticks"].get(round_num, [])
+    return jsonify({"frames": frames, "count": len(frames)})
+
+
+@app.route("/api/map_info/<map_name>")
+def api_map_info(map_name):
+    return jsonify(_get_map_bounds(map_name))
+
+
+@app.route("/api/map_image/<map_name>")
+def api_map_image(map_name):
+    import awpy
+    awpy_dir = os.path.dirname(os.path.abspath(awpy.__file__))
+    for subdir in ["data/maps", "data", "maps"]:
+        for ext in ["png", "jpg", "jpeg"]:
+            img_path = os.path.join(awpy_dir, subdir, f"{map_name}.{ext}")
+            if os.path.exists(img_path):
+                return send_file(img_path, mimetype=f"image/{ext}")
+    return "", 404
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
