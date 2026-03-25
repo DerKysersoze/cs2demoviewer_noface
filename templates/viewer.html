@@ -275,6 +275,57 @@
     .legend-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .legend-side { font-size: .7rem; color: var(--muted); }
 
+    /* ── Aim Breakdown ── */
+    .aim-layout { display: grid; grid-template-columns: 220px 1fr; gap: 16px; align-items: start; }
+    .aim-player-list {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .aim-player-btn {
+      display: block; width: 100%; text-align: left;
+      padding: 9px 14px; background: none; border: none; border-bottom: 1px solid var(--border);
+      color: var(--muted); font-size: .83rem; cursor: pointer; transition: background .1s;
+    }
+    .aim-player-btn:last-child { border-bottom: none; }
+    .aim-player-btn:hover  { background: var(--surface2); color: var(--text); }
+    .aim-player-btn.active { background: var(--surface2); color: var(--ct); font-weight: 700; }
+    .aim-detail { display: flex; flex-direction: column; gap: 14px; }
+    .aim-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px;
+    }
+    .aim-card h4 {
+      font-size: .72rem; text-transform: uppercase; letter-spacing: .07em;
+      color: var(--muted); margin-bottom: 12px;
+    }
+    .aim-stats-row { display: flex; gap: 24px; flex-wrap: wrap; }
+    .aim-stat { display: flex; flex-direction: column; gap: 2px; position: relative; cursor: default; }
+    .aim-stat-val { font-size: 1.4rem; font-weight: 700; color: var(--text); }
+    .aim-stat-lbl { font-size: .72rem; color: var(--muted); border-bottom: 1px dashed var(--border); }
+    [data-tip] { position: relative; }
+    [data-tip]::after {
+      content: attr(data-tip);
+      position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      font-size: .75rem; font-weight: 400; line-height: 1.45;
+      white-space: pre-wrap; max-width: 240px; min-width: 160px;
+      padding: 7px 10px; border-radius: 6px; pointer-events: none;
+      opacity: 0; transition: opacity .15s; z-index: 100; text-align: left;
+    }
+    [data-tip]:hover::after { opacity: 1; }
+    .wpn-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 2px 7px; border-radius: 4px; font-size: .68rem;
+      font-weight: 700; letter-spacing: .04em; color: #0d0d12;
+      white-space: nowrap; cursor: default;
+    }
+    .hg-row { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; font-size: .82rem; }
+    .hg-label { width: 72px; color: var(--muted); flex-shrink: 0; }
+    .hg-bar-bg { flex: 1; height: 10px; background: var(--border); border-radius: 99px; overflow: hidden; }
+    .hg-bar-fill { height: 100%; border-radius: 99px; transition: width .3s; }
+    .hg-count { width: 32px; text-align: right; color: var(--muted); font-size: .78rem; }
+    .hg-pct   { width: 36px; text-align: right; font-size: .78rem; }
+
     /* ── Map download btn ── */
     .dl-btn {
       display: inline-flex; align-items: center; gap: 6px;
@@ -314,9 +365,10 @@
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('scoreboard', this)">Scoreboard</button>
     <button class="tab-btn" onclick="switchTab('timeline', this)">Timeline</button>
-    <button class="tab-btn" onclick="switchTab('map', this)">Map</button>
+    <button class="tab-btn" onclick="switchTab('map', this)">Visual Timeline</button>
     <button class="tab-btn" onclick="switchTab('rounds', this)">Rounds</button>
     <button class="tab-btn" onclick="switchTab('killfeed', this)">Kill Feed</button>
+    <button class="tab-btn" onclick="switchTab('aim', this)">Aim Breakdown</button>
   </div>
 
   <!-- Scoreboard -->
@@ -421,6 +473,17 @@
     </div>
   </div>
 
+  <!-- Aim Breakdown -->
+  <div class="tab-panel" id="tab-aim">
+    <div class="aim-layout">
+      <div class="aim-player-list" id="aim-player-list"></div>
+      <div class="aim-detail" id="aim-detail">
+        <div class="aim-card" style="color:var(--muted);font-size:.88rem">Select a player to view their aim breakdown.</div>
+      </div>
+    </div>
+    <div id="aim-weapons" style="margin-top:14px"></div>
+  </div>
+
 </div><!-- /results -->
 
 <script>
@@ -483,6 +546,9 @@
     allRounds = d.rounds;
     renderTimeline(d.rounds, d.ct_team, d.t_team);
     try { mapInit(d); } catch(e) { console.error('mapInit failed:', e); }
+
+    // Aim breakdown
+    renderAimPlayerList(d.aim_breakdown || []);
 
     // Kill feed
     allKills = d.kills;
@@ -632,6 +698,163 @@
     const detail = document.getElementById('round-detail');
     detail.style.display = 'block';
     detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  // ── Aim Breakdown ────────────────────────────────────────────
+  const WEAPON_META = {
+    ak47:          { cat:'rifle',   abbr:'AK-47',  label:'AK-47' },
+    m4a1:          { cat:'rifle',   abbr:'M4A4',   label:'M4A4' },
+    m4a1_silencer: { cat:'rifle',   abbr:'M4A1-S', label:'M4A1-S' },
+    sg556:         { cat:'rifle',   abbr:'SG553',  label:'SG 553' },
+    aug:           { cat:'rifle',   abbr:'AUG',    label:'AUG' },
+    galilar:       { cat:'rifle',   abbr:'GALIL',  label:'Galil AR' },
+    galil:         { cat:'rifle',   abbr:'GALIL',  label:'Galil AR' },
+    famas:         { cat:'rifle',   abbr:'FAMAS',  label:'FAMAS' },
+    awp:           { cat:'sniper',  abbr:'AWP',    label:'AWP' },
+    ssg08:         { cat:'sniper',  abbr:'SSG08',  label:'SSG 08' },
+    g3sg1:         { cat:'sniper',  abbr:'G3SG1',  label:'G3SG1' },
+    scar20:        { cat:'sniper',  abbr:'SCAR20', label:'SCAR-20' },
+    deagle:        { cat:'pistol',  abbr:'DEAGLE', label:'Desert Eagle' },
+    glock:         { cat:'pistol',  abbr:'GLOCK',  label:'Glock-18' },
+    usp_silencer:  { cat:'pistol',  abbr:'USP-S',  label:'USP-S' },
+    hkp2000:       { cat:'pistol',  abbr:'P2000',  label:'P2000' },
+    p250:          { cat:'pistol',  abbr:'P250',   label:'P250' },
+    tec9:          { cat:'pistol',  abbr:'TEC-9',  label:'Tec-9' },
+    fiveseven:     { cat:'pistol',  abbr:'57E',    label:'Five-SeveN' },
+    cz75a:         { cat:'pistol',  abbr:'CZ75',   label:'CZ75-Auto' },
+    revolver:      { cat:'pistol',  abbr:'R8',     label:'R8 Revolver' },
+    elite:         { cat:'pistol',  abbr:'ELITE',  label:'Dual Berettas' },
+    mp9:           { cat:'smg',     abbr:'MP9',    label:'MP9' },
+    mp7:           { cat:'smg',     abbr:'MP7',    label:'MP7' },
+    mp5sd:         { cat:'smg',     abbr:'MP5-SD', label:'MP5-SD' },
+    ump45:         { cat:'smg',     abbr:'UMP-45', label:'UMP-45' },
+    p90:           { cat:'smg',     abbr:'P90',    label:'P90' },
+    bizon:         { cat:'smg',     abbr:'BIZON',  label:'PP-Bizon' },
+    mac10:         { cat:'smg',     abbr:'MAC-10', label:'MAC-10' },
+    nova:          { cat:'shotgun', abbr:'NOVA',   label:'Nova' },
+    xm1014:        { cat:'shotgun', abbr:'XM1014', label:'XM1014' },
+    mag7:          { cat:'shotgun', abbr:'MAG-7',  label:'MAG-7' },
+    sawedoff:      { cat:'shotgun', abbr:'SAWOFF', label:'Sawed-Off' },
+    m249:          { cat:'heavy',   abbr:'M249',   label:'M249' },
+    negev:         { cat:'heavy',   abbr:'NEGEV',  label:'Negev' },
+    flashbang:     { cat:'grenade', abbr:'FLASH',  label:'Flashbang' },
+    smokegrenade:  { cat:'grenade', abbr:'SMOKE',  label:'Smoke Grenade' },
+    hegrenade:     { cat:'grenade', abbr:'HE',     label:'HE Grenade' },
+    molotov:       { cat:'grenade', abbr:'MOLOTV', label:'Molotov' },
+    incgrenade:    { cat:'grenade', abbr:'INC',    label:'Incendiary' },
+    decoy:         { cat:'grenade', abbr:'DECOY',  label:'Decoy Grenade' },
+    knife:         { cat:'knife',   abbr:'KNIFE',  label:'Knife' },
+    knife_t:       { cat:'knife',   abbr:'KNIFE',  label:'Knife' },
+    bayonet:       { cat:'knife',   abbr:'KNIFE',  label:'Bayonet' },
+  };
+  const WEAPON_CAT_COLOR = {
+    rifle:'#ff9f1c', sniper:'#f87171', pistol:'#38bdf8',
+    smg:'#6bcb77',   shotgun:'#fbbf24', heavy:'#c77dff',
+    grenade:'#2ec4b6', knife:'#94a3b8', unknown:'#6b7280',
+  };
+  function weaponIcon(raw) {
+    const key  = (raw || '').toLowerCase().replace(/^weapon_/, '');
+    const meta = WEAPON_META[key];
+    const cat  = meta ? meta.cat   : 'unknown';
+    const abbr = meta ? meta.abbr  : raw.toUpperCase().slice(0, 6);
+    const label= meta ? meta.label : raw;
+    const bg   = WEAPON_CAT_COLOR[cat] || WEAPON_CAT_COLOR.unknown;
+    return `<span class="wpn-icon" style="background:${bg}" data-tip="${label}\nCategory: ${cat}">${abbr}</span>`;
+  }
+
+  const HG_ORDER  = ['Head','Neck','Chest','Stomach','L Arm','R Arm','L Leg','R Leg','Gear','Generic'];
+  const HG_COLORS = {
+    Head: '#f87171', Neck: '#fb923c', Chest: '#60a5fa', Stomach: '#a78bfa',
+    'L Arm': '#34d399', 'R Arm': '#34d399', 'L Leg': '#fbbf24', 'R Leg': '#fbbf24',
+    Gear: '#94a3b8', Generic: '#6b7280',
+  };
+  let aimData = [];
+
+  function renderAimPlayerList(data) {
+    aimData = data;
+    document.getElementById('aim-player-list').innerHTML = data.map((p, i) =>
+      `<button class="aim-player-btn" onclick="renderAimPlayer(${i}, this)">${esc(p.name)}</button>`
+    ).join('');
+  }
+
+  function renderAimPlayer(idx, btn) {
+    document.querySelectorAll('.aim-player-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const p = aimData[idx];
+    const th = p.total_hits;
+
+    // Summary stats
+    const summary = `
+      <div class="aim-card">
+        <h4>Summary — ${esc(p.name)}</h4>
+        <div class="aim-stats-row">
+          <div class="aim-stat" data-tip="Every bullet or grenade hit\nregistered on an enemy,\nexcluding self-damage.">
+            <span class="aim-stat-val">${p.total_hits}</span><span class="aim-stat-lbl">Total Hits</span></div>
+          <div class="aim-stat" data-tip="Sum of all hp damage dealt\nto enemies across the match\n(capped at target's remaining hp).">
+            <span class="aim-stat-val">${p.total_dmg.toLocaleString()}</span><span class="aim-stat-lbl">Total Damage</span></div>
+          <div class="aim-stat" data-tip="Total damage ÷ total hits.\nHigher = better shot selection\nor use of high-damage weapons.">
+            <span class="aim-stat-val">${p.avg_dmg}</span><span class="aim-stat-lbl">Avg Dmg / Hit</span></div>
+          <div class="aim-stat" data-tip="% of all hits that landed\non the head hitbox.\nDoes not require a kill.">
+            <span class="aim-stat-val" style="color:var(--red)">${p.hs_hit_pct}%</span><span class="aim-stat-lbl">Headshot Hit %</span></div>
+          <div class="aim-stat" data-tip="Kill / Assist / Survived / Traded.\n% of rounds where the player:\n• got a kill (K)\n• got an assist (A)\n• survived the round (S)\n• was killed but their killer\n  died within 5 s (T).\nGood players typically 70 %+.">
+            <span class="aim-stat-val" style="color:var(--green)">${p.kast}%</span><span class="aim-stat-lbl">KAST</span></div>
+        </div>
+      </div>`;
+
+    // Hit group bars
+    const hgRows = HG_ORDER
+      .filter(hg => p.hit_groups[hg])
+      .map(hg => {
+        const count = p.hit_groups[hg] || 0;
+        const pct   = th ? Math.round(100 * count / th) : 0;
+        const dmg   = p.dmg_groups[hg] || 0;
+        return `<div class="hg-row">
+          <span class="hg-label">${hg}</span>
+          <div class="hg-bar-bg"><div class="hg-bar-fill" style="width:${pct}%;background:${HG_COLORS[hg]||'#6b7280'}"></div></div>
+          <span class="hg-count">${count}</span>
+          <span class="hg-pct" style="color:${HG_COLORS[hg]||'#6b7280'}">${pct}%</span>
+        </div>`;
+      }).join('');
+
+    const hitGroups = `
+      <div class="aim-card">
+        <h4 data-tip="Where each bullet landed on\nthe enemy's body. Bar width =\n% of total hits on that zone.\nCount shows raw number of hits.">Hit Location Breakdown</h4>
+        ${hgRows || '<span style="color:var(--muted)">No data</span>'}
+      </div>`;
+
+    // Weapon table
+    const wpnRows = p.weapons.map(w => {
+      const avgDmg = w.hits ? Math.round(w.dmg / w.hits) : 0;
+      return `<tr>
+        <td>${weaponIcon(w.weapon)}</td>
+        <td class="r">${w.hits}</td>
+        <td class="r">${w.dmg.toLocaleString()}</td>
+        <td class="r">${avgDmg}</td>
+        <td class="r">${w.kills}</td>
+        <td class="r" style="color:var(--red)">${w.hs_kills}</td>
+      </tr>`;
+    }).join('');
+
+    const weapons = `
+      <div class="aim-card" style="padding:0;overflow:hidden">
+        <h4 style="padding:14px 16px 10px">Per-Weapon Stats</h4>
+        <div class="table-wrap" style="border:none;border-radius:0;margin-bottom:0">
+          <table>
+            <thead><tr>
+              <th>Weapon</th>
+              <th class="r">Hits</th>
+              <th class="r">Dmg</th>
+              <th class="r">Avg Dmg</th>
+              <th class="r">Kills</th>
+              <th class="r">HS Kills</th>
+            </tr></thead>
+            <tbody>${wpnRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+
+    document.getElementById('aim-detail').innerHTML  = summary + hitGroups;
+    document.getElementById('aim-weapons').innerHTML = weapons;
   }
 
   // ── Map viewer ───────────────────────────────────────────────

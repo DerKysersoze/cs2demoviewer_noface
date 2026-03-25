@@ -95,7 +95,6 @@ def extract_ticks(demo) -> dict:
         return {}
 
     cols = list(ticks_df.columns)
-    print(f"[INFO] ticks columns: {cols[:20]}")
 
     name_col  = next((c for c in ["name", "player_name", "steamid"] if c in cols), None)
     x_col     = next((c for c in ["X", "x", "pos_x"] if c in cols), None)
@@ -146,6 +145,130 @@ def extract_ticks(demo) -> dict:
 
         result[int(round_num)] = sorted(frames, key=lambda f: f["t"])
 
+    return result
+
+
+_HITGROUP = {
+    # integer keys (older awpy / fallback)
+    0: "Generic", 1: "Head", 2: "Chest", 3: "Stomach",
+    4: "L Arm", 5: "R Arm", 6: "L Leg", 7: "R Leg",
+    8: "Neck", 10: "Gear",
+    # string keys (awpy v2)
+    "generic": "Generic", "head": "Head", "chest": "Chest", "stomach": "Stomach",
+    "left_arm": "L Arm", "right_arm": "R Arm", "left_leg": "L Leg", "right_leg": "R Leg",
+    "neck": "Neck", "gear": "Gear",
+}
+_HITGROUP_ORDER = ["Head", "Neck", "Chest", "Stomach", "L Arm", "R Arm", "L Leg", "R Leg", "Gear", "Generic"]
+
+
+def _calc_kast(kills: list, rounds: list) -> dict:
+    """
+    Returns {player_name: kast_pct} where KAST = % of rounds with a Kill,
+    Assist, Survived, or Trade (killed within 5 s of being killed).
+    """
+    if not rounds:
+        return {}
+    total_rounds = len(rounds)
+    round_nums   = {r["round_num"] for r in rounds}
+    TRADE_TICKS  = 640  # ~5 s at 128 tick
+
+    kills_by_round: dict = {}
+    for k in kills:
+        kills_by_round.setdefault(k["round_num"], []).append(k)
+
+    # Collect every player name seen across kills
+    _nan = {"?", "nan", ""}
+    players: set = set()
+    for k in kills:
+        if k["attacker"]          not in _nan: players.add(k["attacker"])
+        if k["victim"]            not in _nan: players.add(k["victim"])
+        if k.get("assister", "") not in _nan: players.add(k["assister"])
+
+    kast_count = {p: 0 for p in players}
+
+    for rnum in round_nums:
+        rk = kills_by_round.get(rnum, [])
+        killers   = {k["attacker"] for k in rk if k["attacker"] not in _nan}
+        assisters = {k["assister"] for k in rk if k.get("assister", "") not in _nan}
+        victims   = {k["victim"]   for k in rk if k["victim"]   not in _nan}
+        # map: killed player -> (their killer, tick they died)
+        death_info = {k["victim"]: (k["attacker"], k["tick"]) for k in rk if k["victim"] not in _nan}
+
+        for p in players:
+            if p in killers or p in assisters:
+                kast_count[p] += 1  # K or A
+            elif p not in victims:
+                kast_count[p] += 1  # S — survived
+            else:
+                # T — check if killer was killed within trade window
+                killer, death_tick = death_info.get(p, (None, 0))
+                if killer and killer in death_info:
+                    _, killer_death_tick = death_info[killer]
+                    if 0 <= killer_death_tick - death_tick <= TRADE_TICKS:
+                        kast_count[p] += 1
+
+    return {p: round(100 * kast_count[p] / total_rounds) for p in players}
+
+
+def _extract_aim(kills: list, damages_df, rounds: list) -> list:
+    """Per-player aim breakdown: hit groups, avg damage, per-weapon stats, KAST."""
+    players: dict = {}
+
+    if damages_df is not None:
+        for _, row in damages_df.iterrows():
+            att = row.get("attacker_name")
+            vic = row.get("victim_name")
+            if not att or str(att) == "nan" or str(att) == str(vic):
+                continue  # skip self-damage
+            att = str(att)
+            dmg = int(row.get("dmg_health_real") or row.get("dmg_health") or 0)
+            raw_hg = row.get("hitgroup") or 0
+            hg_key = str(raw_hg).lower() if isinstance(raw_hg, str) else raw_hg
+            hg  = _HITGROUP.get(hg_key, _HITGROUP.get(raw_hg, "Generic"))
+            wpn = str(row.get("weapon") or "?")
+
+            p = players.setdefault(att, {"hit_groups": {}, "dmg_groups": {}, "weapons": {}, "total_hits": 0, "total_dmg": 0})
+            p["hit_groups"][hg]  = p["hit_groups"].get(hg, 0) + 1
+            p["dmg_groups"][hg]  = p["dmg_groups"].get(hg, 0) + dmg
+            p["total_hits"]     += 1
+            p["total_dmg"]      += dmg
+            w = p["weapons"].setdefault(wpn, {"hits": 0, "dmg": 0, "kills": 0, "hs_kills": 0})
+            w["hits"] += 1
+            w["dmg"]  += dmg
+
+    for k in kills:
+        att = k.get("attacker")
+        if not att or att in ("nan", "?"):
+            continue
+        if att in players:
+            wpn = k.get("weapon", "?")
+            w = players[att]["weapons"].setdefault(wpn, {"hits": 0, "dmg": 0, "kills": 0, "hs_kills": 0})
+            w["kills"] += 1
+            if k.get("headshot"):
+                w["hs_kills"] += 1
+
+    kast = _calc_kast(kills, rounds)
+
+    result = []
+    for name, p in players.items():
+        th = p["total_hits"]
+        td = p["total_dmg"]
+        weapons_sorted = sorted(
+            [{"weapon": w, **s} for w, s in p["weapons"].items()],
+            key=lambda x: x["kills"], reverse=True
+        )
+        result.append({
+            "name":          name,
+            "total_hits":    th,
+            "total_dmg":     td,
+            "avg_dmg":       round(td / th, 1) if th else 0,
+            "hs_hit_pct":    round(100 * p["hit_groups"].get("Head", 0) / th) if th else 0,
+            "kast":          kast.get(name, 0),
+            "hit_groups":    p["hit_groups"],
+            "dmg_groups":    p["dmg_groups"],
+            "weapons":       weapons_sorted,
+        })
+    result.sort(key=lambda x: x["total_dmg"], reverse=True)
     return result
 
 
@@ -233,6 +356,7 @@ def parse_demo(dem_path: str) -> dict:
                 "through_smoke": bool(row.get("thrusmoke")),
                 "no_scope":      bool(row.get("noscope")),
                 "penetrated":    bool(row.get("penetrated")),
+                "assister":      str(row.get("assister_name") or ""),
             })
 
     # ---- Scoreboard ----
@@ -259,6 +383,9 @@ def parse_demo(dem_path: str) -> dict:
             if att and str(att) != "nan":
                 dmg = int(row.get("dmg_health_real") or row.get("dmg_health") or 0)
                 inc(str(att), "dmg", dmg)
+
+    # ---- Aim breakdown ----
+    aim_breakdown = _extract_aim(kills, damages_df, rounds)
 
     scoreboard = []
     for player, s in stats.items():
@@ -288,17 +415,18 @@ def parse_demo(dem_path: str) -> dict:
     }
 
     return {
-        "header":       header,
-        "ct_team":      ct_team,
-        "t_team":       t_team,
-        "ct_wins":      ct_wins,
-        "t_wins":       t_wins,
-        "total_rounds": len(rounds),
-        "rounds":       rounds,
-        "kills":        kills,
-        "scoreboard":   scoreboard,
-        "session_id":   session_id,
-        "has_ticks":    bool(ticks_by_round),
+        "header":        header,
+        "ct_team":       ct_team,
+        "t_team":        t_team,
+        "ct_wins":       ct_wins,
+        "t_wins":        t_wins,
+        "total_rounds":  len(rounds),
+        "rounds":        rounds,
+        "kills":         kills,
+        "scoreboard":    scoreboard,
+        "aim_breakdown": aim_breakdown,
+        "session_id":    session_id,
+        "has_ticks":     bool(ticks_by_round),
     }
 
 
