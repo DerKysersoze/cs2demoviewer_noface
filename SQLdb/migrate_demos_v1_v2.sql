@@ -1,4 +1,4 @@
--- Migration: old single 'data' TEXT column -> normalised 19-column schema
+-- Migration: old single 'data' TEXT column -> normalised 18-column schema
 -- Executed by _db_init() in app.py when PRAGMA table_info detects a 'data' column.
 -- The Python layer reads all rows and re-inserts them; this file only supplies the DDL.
 
@@ -22,6 +22,5 @@ CREATE TABLE demos (
     kills         BLOB,
     scoreboard    BLOB,
     aim_breakdown  BLOB,
-    swag_breakdown BLOB,
     ticks_data    BLOB
 );

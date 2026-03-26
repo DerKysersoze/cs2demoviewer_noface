@@ -87,20 +87,30 @@ def _j(v):
     return None if s in ("[]", "null") else s
 
 
-def _cache_agent_images():
-    """Download agent images from the DB and save to images/agents/.
-    Skips files that already exist. Runs in a background thread at startup."""
-    agents_dir = IMAGES_DIR / "agents"
-    agents_dir.mkdir(parents=True, exist_ok=True)
+def _cache_table_images(table: str, col: str = "image"):
+    """Download images for one table/column and save to images/<table>/.
+    Skips files that already exist."""
+    table_dir = IMAGES_DIR / table
+    table_dir.mkdir(parents=True, exist_ok=True)
 
     con = sqlite3.connect(DB_PATH)
-    rows = con.execute("SELECT id, image FROM agents WHERE image IS NOT NULL").fetchall()
+    try:
+        rows = con.execute(
+            f"SELECT id, {col} FROM {table} WHERE {col} IS NOT NULL"
+        ).fetchall()
+    except Exception as e:
+        log.warning("image cache skipped [%s.%s]: %s", table, col, e)
+        con.close()
+        return
     con.close()
 
+    suffix = f"_{col}" if col != "image" else ""
     cached = skipped = failed = 0
-    for agent_id, url in rows:
-        # Skip if any file for this agent already exists (regardless of extension)
-        existing = list(agents_dir.glob(f"{agent_id}.*"))
+    for row_id, url in rows:
+        if not url.startswith(("http://", "https://")):
+            skipped += 1
+            continue
+        existing = list(table_dir.glob(f"{row_id}{suffix}.*"))
         if existing:
             skipped += 1
             continue
@@ -109,14 +119,58 @@ def _cache_agent_images():
             resp.raise_for_status()
             ct = resp.headers.get("Content-Type", "image/jpeg")
             ext = ".png" if "png" in ct else ".jpg"
-            (agents_dir / f"{agent_id}{ext}").write_bytes(resp.content)
+            (table_dir / f"{row_id}{suffix}{ext}").write_bytes(resp.content)
             cached += 1
-            log.debug("agent image cached: %s%s", agent_id, ext)
+            log.debug("%s.%s cached: %s%s%s", table, col, row_id, suffix, ext)
         except Exception as e:
             failed += 1
-            log.warning("agent image fetch failed [%s]: %s", agent_id, e)
+            log.warning("%s.%s fetch failed [%s]: %s", table, col, row_id, e)
 
-    log.info("agent images: cached=%d  skipped=%d  failed=%d", cached, skipped, failed)
+    log.info("%s.%s images: cached=%d  skipped=%d  failed=%d", table, col, cached, skipped, failed)
+
+
+# Tables and columns to cache; tuples of (table, col)
+_IMAGE_COLUMNS = [
+    ("agents",           "image"),
+    ("agents",           "original_image"),
+    ("base_weapons",     "image"),
+    ("collectibles",     "image"),
+    ("collectibles",     "original_image"),
+    ("collections",      "image"),
+    ("collections",      "original_image"),
+    ("crates",           "image"),
+    ("crates",           "original_image"),
+    ("graffiti",         "image"),
+    ("graffiti",         "original_image"),
+    ("highlights",       "image"),
+    ("highlights",       "thumbnail"),
+    ("highlights",       "original_image"),
+    ("keychains",        "image"),
+    ("keychains",        "original_image"),
+    ("keys",             "image"),
+    ("keys",             "original_image"),
+    ("music_kits",       "image"),
+    ("music_kits",       "original_image"),
+    ("patches",          "image"),
+    ("patches",          "original_image"),
+    ("skins",            "image"),
+    ("skins_not_grouped","image"),
+    ("skins_not_grouped","original_image"),
+    ("sticker_slabs",    "image"),
+    ("sticker_slabs",    "original_image"),
+    ("stickers",         "image"),
+    ("stickers",         "original_image"),
+    ("tools",            "image"),
+    ("tools",            "original_image"),
+]
+
+
+def _cache_all_images():
+    """Download and cache images for all reference tables. Runs in a background thread."""
+    log.info("image cache: starting for %d table/column pairs", len(_IMAGE_COLUMNS))
+    for table, col in _IMAGE_COLUMNS:
+        _cache_table_images(table, col)
+    log.info("image cache: all done")
 
 
 def _load_struct_db():
@@ -399,12 +453,86 @@ def _unblob(raw) -> object:
     return json.loads(zlib.decompress(bytes(raw)).decode())
 
 
+def _cosmetics_insert_rows(con, demo_id: str, swag: list):
+    """Insert swag_breakdown items for one demo into demo_cosmetics."""
+    for player in swag:
+        sid  = player.get("steamid")
+        name = player.get("name")
+        team = player.get("team")
+        all_items = (
+            [player["ct_agent"]] if player.get("ct_agent") else []
+        ) + (
+            [player["t_agent"]]  if player.get("t_agent")  else []
+        ) + player.get("ct_weapons", []) + player.get("t_weapons", [])
+        for item in all_items:
+            con.execute(
+                """INSERT INTO demo_cosmetics
+                   (demo_id, steamid, player_name, team,
+                    def_index, item_name, skin_name, paint_index, paint_seed,
+                    wear, wear_tier, custom_name, stattrak, is_agent, side)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    demo_id, sid, name, team,
+                    item.get("def_index"), item.get("item_name"), item.get("skin_name"),
+                    item.get("paint_index"), item.get("paint_seed"),
+                    item.get("wear"), item.get("wear_tier"), item.get("custom_name"),
+                    item.get("stattrak"), int(bool(item.get("is_agent"))),
+                    item.get("side"),
+                ),
+            )
+
+
+def _cosmetics_to_swag(rows) -> list:
+    """Reconstruct swag_breakdown list from demo_cosmetics rows."""
+    from collections import OrderedDict
+    players: dict = OrderedDict()
+    for r in rows:
+        sid = r["steamid"] or ""
+        key = (sid, r["player_name"] or "")
+        if key not in players:
+            players[key] = {
+                "steamid":    sid,
+                "name":       r["player_name"],
+                "team":       r["team"],
+                "ct_agent":   None,
+                "t_agent":    None,
+                "ct_weapons": [],
+                "t_weapons":  [],
+            }
+        p = players[key]
+        item = {
+            "def_index":   r["def_index"],
+            "item_name":   r["item_name"],
+            "skin_name":   r["skin_name"],
+            "paint_index": r["paint_index"],
+            "paint_seed":  r["paint_seed"],
+            "wear":        r["wear"],
+            "wear_tier":   r["wear_tier"],
+            "custom_name": r["custom_name"],
+            "stattrak":    r["stattrak"],
+            "is_agent":    bool(r["is_agent"]),
+            "side":        r["side"],
+            "weapon_cat":  "knife" if r["def_index"] in _KNIFE_DEF_INDICES else None,
+        }
+        if item["is_agent"]:
+            if r["side"] == "T":
+                p["t_agent"] = item
+            else:
+                p["ct_agent"] = item
+        elif r["side"] == "T":
+            p["t_weapons"].append(item)
+        else:
+            p["ct_weapons"].append(item)
+    return list(players.values())
+
+
 def _db_init():
     log.info("DB: initialising — %s", DB_PATH)
     con = sqlite3.connect(DB_PATH)
 
-    # Create new normalised demos schema if it doesn't exist yet
+    # Create schemas
     con.executescript(_load_sql("schema_demos.sql"))
+    con.executescript(_load_sql("schema_demo_cosmetics.sql"))
 
     # ---- Migrate old skin_names table (drop it; skins will be populated from struct_db) ----
     tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
@@ -431,7 +559,7 @@ def _db_init():
                 continue
             h = d.get("header") or {}
             con.execute(
-                "INSERT INTO demos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO demos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     rid, filename, map_name, uploaded_at,
                     h.get("tickrate"), h.get("duration"),
@@ -442,11 +570,42 @@ def _db_init():
                     _blob(d["kills"])         if d.get("kills")         else None,
                     _blob(d["scoreboard"])    if d.get("scoreboard")    else None,
                     _blob(d["aim_breakdown"]) if d.get("aim_breakdown") else None,
-                    _blob(d["swag_breakdown"]) if d.get("swag_breakdown") else None,
                     ticks_blob,
                 ),
             )
+            if d.get("swag_breakdown"):
+                _cosmetics_insert_rows(con, rid, d["swag_breakdown"])
         log.info("DB: migrated %d rows", len(rows))
+
+    # ---- Migrate swag_breakdown blob → demo_cosmetics rows ----
+    cols = {r[1] for r in con.execute("PRAGMA table_info(demos)").fetchall()}
+    if "swag_breakdown" in cols:
+        log.info("DB: migrating swag_breakdown blobs → demo_cosmetics…")
+        blob_rows = con.execute(
+            "SELECT id, swag_breakdown FROM demos WHERE swag_breakdown IS NOT NULL"
+        ).fetchall()
+        migrated = 0
+        for demo_id, blob in blob_rows:
+            already = con.execute(
+                "SELECT 1 FROM demo_cosmetics WHERE demo_id = ? LIMIT 1", (demo_id,)
+            ).fetchone()
+            if already:
+                continue
+            try:
+                swag = _unblob(blob)
+                _cosmetics_insert_rows(con, demo_id, swag)
+                migrated += 1
+            except Exception as e:
+                log.warning("DB: swag migration failed for %s: %s", demo_id, e)
+        log.info("DB: migrated swag blobs for %d demos", migrated)
+        con.execute("ALTER TABLE demos DROP COLUMN swag_breakdown")
+        log.info("DB: dropped demos.swag_breakdown column")
+
+    # ---- Drop weapon_cat column from demo_cosmetics if it still exists ----
+    dc_cols = {r[1] for r in con.execute("PRAGMA table_info(demo_cosmetics)").fetchall()}
+    if "weapon_cat" in dc_cols:
+        con.execute("ALTER TABLE demo_cosmetics DROP COLUMN weapon_cat")
+        log.info("DB: dropped demo_cosmetics.weapon_cat column")
 
     con.commit()
     con.close()
@@ -461,9 +620,10 @@ def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
     h = data_dict.get("header") or {}
     has_ticks = bool(ticks_by_round)
     ticks_blob = _blob(ticks_by_round) if ticks_by_round else None
+    log.info("db_save: starting — demo_id=%s filename=%s map=%s", demo_id, filename, map_name)
     con = sqlite3.connect(DB_PATH)
     con.execute(
-        "INSERT OR REPLACE INTO demos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT OR REPLACE INTO demos VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             demo_id, filename, map_name,
             datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
@@ -477,11 +637,18 @@ def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
             _blob(data_dict["kills"])         if data_dict.get("kills")         else None,
             _blob(data_dict["scoreboard"])    if data_dict.get("scoreboard")    else None,
             _blob(data_dict["aim_breakdown"]) if data_dict.get("aim_breakdown") else None,
-            _blob(data_dict["swag_breakdown"]) if data_dict.get("swag_breakdown") else None,
             ticks_blob,
         ),
     )
+    log.info("db_save: INSERT done — demo_id=%s", demo_id)
+    # Replace cosmetics rows for this demo
+    con.execute("DELETE FROM demo_cosmetics WHERE demo_id = ?", (demo_id,))
+    swag = data_dict.get("swag_breakdown")
+    log.info("db_save: swag_breakdown players=%s", len(swag) if swag else 0)
+    if swag:
+        _cosmetics_insert_rows(con, demo_id, swag)
     con.commit()
+    log.info("db_save: committed — demo_id=%s", demo_id)
     con.close()
 
 
@@ -499,9 +666,14 @@ def _db_get(demo_id: str):
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     row = con.execute("SELECT * FROM demos WHERE id = ?", (demo_id,)).fetchone()
-    con.close()
     if not row:
+        con.close()
         return None
+
+    cosmetic_rows = con.execute(
+        "SELECT * FROM demo_cosmetics WHERE demo_id = ? ORDER BY id", (demo_id,)
+    ).fetchall()
+    con.close()
 
     data = {
         "header": {
@@ -521,7 +693,7 @@ def _db_get(demo_id: str):
         "kills":         _unblob(row["kills"])         if row["kills"]         else [],
         "scoreboard":    _unblob(row["scoreboard"])    if row["scoreboard"]    else [],
         "aim_breakdown": _unblob(row["aim_breakdown"]) if row["aim_breakdown"] else [],
-        "swag_breakdown":_unblob(row["swag_breakdown"]) if row["swag_breakdown"] else [],
+        "swag_breakdown": _cosmetics_to_swag(cosmetic_rows),
     }
 
     if row["ticks_data"]:
@@ -541,6 +713,7 @@ def _db_get(demo_id: str):
 
 def _db_delete(demo_id: str) -> bool:
     con = sqlite3.connect(DB_PATH)
+    con.execute("DELETE FROM demo_cosmetics WHERE demo_id = ?", (demo_id,))
     cur = con.execute("DELETE FROM demos WHERE id = ?", (demo_id,))
     con.commit()
     con.close()
@@ -749,6 +922,12 @@ _WEAPON_SIDE: dict = {
 # Knives 500-526: require inventory slot analysis; mark as both for now,
 # resolved below via agent-side lookup if only one knife entry exists.
 
+_KNIFE_DEF_INDICES: frozenset = frozenset({
+    41, 59,  # default CT/T knife
+    500, 505, 506, 507, 508, 509, 512, 514, 515, 516,
+    517, 518, 519, 520, 521, 522, 523, 525, 526,
+})
+
 # CS2 event weapon class name -> def_index (for weapon_fire fallback)
 _WEAPON_CLASS_TO_DEFIDX: dict = {
     "weapon_deagle":        1,
@@ -842,7 +1021,11 @@ def _load_skin_names() -> dict:
         rows = con.execute(
             "SELECT paint_index, name FROM skins WHERE paint_index IS NOT NULL AND paint_index != ''"
         ).fetchall()
-        _SKIN_NAMES = {str(r[0]): r[1] for r in rows}
+        # Strip weapon prefix ("AK-47 | Redline" → "Redline") so the same pattern name
+        # is stored regardless of which weapon row wins when paint_index is shared.
+        def _strip_prefix(name: str) -> str:
+            return name.split(" | ", 1)[-1] if name and " | " in name else name
+        _SKIN_NAMES = {str(r[0]): _strip_prefix(r[1]) for r in rows}
         log.info("skin names: loaded %d entries from skins table", len(_SKIN_NAMES))
     except Exception as e:
         log.warning("skin names: failed to load from skins table: %s", e)
@@ -870,6 +1053,11 @@ def extract_cosmetics(dem_path: str) -> list:
     except Exception as e:
         log.warning("extract_cosmetics parse failed: %s", e)
         return []
+
+    log.debug("parse_skins columns: %s", list(skins_df.columns))
+    def_cols = [c for c in skins_df.columns if "def" in c.lower()]
+    log.debug("parse_skins def-related columns: %s", def_cols)
+    log.debug("parse_skins sample:\n%s", skins_df.head().to_string())
 
     # ---- StatTrak: steamid -> {def_index -> count} ----
     stattrak: dict = {}
@@ -948,6 +1136,7 @@ def extract_cosmetics(dem_path: str) -> list:
             "stattrak":    st_count,
             "is_agent":    is_agent,
             "side":        item_side,
+            "weapon_cat":  "knife" if def_idx in _KNIFE_DEF_INDICES else None,
         })
 
     # Fill in default (no-skin) entries for weapons used in-game but absent from parse_skins
@@ -1447,9 +1636,9 @@ def api_demos_delete(demo_id):
     return jsonify({"error": "Demo not found"}), 404
 
 
-@app.route("/images/agents/<path:filename>")
-def serve_agent_image(filename):
-    path = IMAGES_DIR / "agents" / filename
+@app.route("/images/<table>/<path:filename>")
+def serve_cached_image(table, filename):
+    path = IMAGES_DIR / table / filename
     if not path.exists():
         return "", 404
     return send_file(str(path))
@@ -1507,7 +1696,7 @@ def api_admin_schema():
 
 _load_skin_names()
 
-threading.Thread(target=_cache_agent_images, daemon=True, name="agent-image-cache").start()
+threading.Thread(target=_cache_all_images, daemon=True, name="image-cache").start()
 
 log.info("startup complete — cs2demviewer ready")
 

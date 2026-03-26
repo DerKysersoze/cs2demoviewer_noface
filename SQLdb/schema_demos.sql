@@ -16,6 +16,5 @@ CREATE TABLE IF NOT EXISTS demos (
     kills         BLOB,
     scoreboard    BLOB,
     aim_breakdown  BLOB,
-    swag_breakdown BLOB,
     ticks_data    BLOB
 );

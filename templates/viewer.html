@@ -793,11 +793,11 @@
     smg:'#6bcb77',   shotgun:'#fbbf24', heavy:'#c77dff',
     grenade:'#2ec4b6', knife:'#94a3b8', unknown:'#6b7280',
   };
-  function weaponIcon(raw) {
+  function weaponIcon(raw, catHint) {
     const key  = (raw || '').toLowerCase().replace(/^weapon_/, '');
     const meta = WEAPON_META[key];
-    const cat  = meta ? meta.cat   : 'unknown';
-    const abbr = meta ? meta.abbr  : raw.toUpperCase().slice(0, 6);
+    const cat  = meta ? meta.cat   : (catHint || 'unknown');
+    const abbr = meta ? meta.abbr  : (catHint === 'knife' ? 'KNIFE' : raw.toUpperCase().slice(0, 6));
     const label= meta ? meta.label : raw;
     const bg   = WEAPON_CAT_COLOR[cat] || WEAPON_CAT_COLOR.unknown;
     return `<span class="wpn-icon" style="background:${bg}" data-tip="${label}\nCategory: ${cat}">${abbr}</span>`;
@@ -889,7 +889,7 @@
           : `<span style="color:var(--muted)">—</span>`;
         const seedCell  = w.paint_seed != null ? w.paint_seed : '—';
         return `<tr>
-          <td style="white-space:nowrap">${weaponIcon(w.item_name)} <span style="font-size:.84rem">${nameCell}</span></td>
+          <td style="white-space:nowrap">${weaponIcon(w.item_name, w.weapon_cat)} <span style="font-size:.84rem">${nameCell}</span></td>
           <td>${skinCell}</td>
           <td>${wearCell}</td>
           <td class="r" style="color:var(--muted);font-size:.8rem">${seedCell}</td>
