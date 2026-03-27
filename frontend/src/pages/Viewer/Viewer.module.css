@@ -456,6 +456,62 @@
   min-width: 46px;
 }
 
+/* ── Event Feed ── */
+.eventFeedPanel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.eventFeedHeader {
+  padding: 7px 12px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  font-size: .65rem;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.eventFeedBody {
+  overflow-y: auto;
+  max-height: 220px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+.eventFeedEmpty {
+  padding: 12px;
+  font-size: .72rem;
+  color: var(--muted);
+  text-align: center;
+}
+.eventRow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: .72rem;
+  line-height: 1.4;
+  border-radius: 3px;
+  margin: 0 4px;
+}
+.eventRow:hover { background: var(--surface2); }
+.eventIcon { flex-shrink: 0; font-size: .8rem; line-height: 1; }
+.eventText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eventTick { flex-shrink: 0; font-size: .6rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Event type colours */
+.event_kill   .eventText { color: var(--red); }
+.event_hskill .eventText { color: #facc15; }
+.event_nade   .eventText { color: var(--muted); }
+.event_buy    .eventText { color: var(--muted); opacity: .75; }
+.event_plant  .eventText { color: var(--t); font-weight: 700; }
+.event_defuse .eventText { color: var(--ct); font-weight: 700; }
+
 /* ── Viewer version toggle switch ── */
 .viewerToggle {
   display: flex;

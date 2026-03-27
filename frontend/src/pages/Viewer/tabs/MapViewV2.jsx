@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ticksApi } from '../../../api/ticks'
 import { useMapCanvas } from '../../../hooks/useMapCanvas'
@@ -108,6 +108,85 @@ function PlayerHealthBars({ frames, frame, scoreboard, playerColorMap, hiddenPla
   )
 }
 
+const EVENT_CONFIG = {
+  kill:   { icon: '💀', cls: 'kill'   },
+  hskill: { icon: '🎯', cls: 'hskill' },
+  smoke:  { icon: '💨', cls: 'nade'   },
+  flash:  { icon: '⚡', cls: 'nade'   },
+  he:     { icon: '💥', cls: 'nade'   },
+  fire:   { icon: '🔥', cls: 'nade'   },
+  buy:    { icon: '🛒', cls: 'buy'    },
+  plant:  { icon: '💣', cls: 'plant'  },
+  defuse: { icon: '🔵', cls: 'defuse' },
+}
+
+function buildEventList(kills, grenades, events, roundNum) {
+  const list = []
+
+  kills
+    .filter(k => k.round_num === roundNum)
+    .forEach(k => {
+      list.push({
+        tick: k.tick,
+        kind: k.headshot ? 'hskill' : 'kill',
+        text: k.headshot
+          ? `${k.attacker} → ${k.victim} (HS · ${k.weapon})`
+          : `${k.attacker} → ${k.victim} (${k.weapon})`,
+      })
+    })
+
+  grenades.forEach(g => {
+    list.push({ tick: g.from_tick, kind: g.type, text: `Grenade — ${g.type}` })
+  })
+
+  events.forEach(e => {
+    let text = ''
+    if (e.type === 'buy')    text = `${e.player} bought ${e.item}`
+    if (e.type === 'plant')  text = `${e.player} planted the bomb`
+    if (e.type === 'defuse') text = `${e.player} defused the bomb`
+    list.push({ tick: e.tick, kind: e.type, text })
+  })
+
+  return list.sort((a, b) => a.tick - b.tick)
+}
+
+const EventFeed = memo(function EventFeed({ kills, grenades, events, currentTick, roundNum, hasRound }) {
+  const feedRef   = useRef(null)
+  const allEvents = useMemo(
+    () => buildEventList(kills, grenades, events, roundNum),
+    [kills, grenades, events, roundNum]
+  )
+  const visible = allEvents.filter(e => e.tick <= currentTick)
+
+  useEffect(() => {
+    if (feedRef.current) feedRef.current.scrollTop = feedRef.current.scrollHeight
+  }, [visible.length])
+
+  return (
+    <div className={styles.eventFeedPanel}>
+      <div className={styles.eventFeedHeader}>Round Feed</div>
+      <div className={styles.eventFeedBody} ref={feedRef}>
+        {!hasRound && (
+          <div className={styles.eventFeedEmpty}>Select a round to see events</div>
+        )}
+        {hasRound && visible.length === 0 && (
+          <div className={styles.eventFeedEmpty}>No events yet…</div>
+        )}
+        {visible.map((ev, i) => {
+          const cfg = EVENT_CONFIG[ev.kind] || { icon: '•', cls: 'buy' }
+          return (
+            <div key={i} className={`${styles.eventRow} ${styles['event_' + cfg.cls]}`}>
+              <span className={styles.eventIcon}>{cfg.icon}</span>
+              <span className={styles.eventText}>{ev.text}</span>
+              <span className={styles.eventTick}>{ev.tick}</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+})
+
 export default function MapViewV2({ demo, demoId }) {
   const mapName    = demo.header?.map
   const rounds     = demo.rounds    || []
@@ -120,8 +199,9 @@ export default function MapViewV2({ demo, demoId }) {
   }, [scoreboard])
 
   const [selectedRound, setSelectedRound] = useState('')
-  const [frames,   setFrames]   = useState([])
-  const [grenades, setGrenades] = useState([])
+  const [frames,      setFrames]      = useState([])
+  const [grenades,    setGrenades]    = useState([])
+  const [roundEvents, setRoundEvents] = useState([])
   const [frame,    setFrame]    = useState(0)
   const [playing,  setPlaying]  = useState(false)
   const [speed,    setSpeed]    = useState(1)
@@ -207,6 +287,7 @@ export default function MapViewV2({ demo, demoId }) {
     const f = tickData.frames || []
     setFrames(f)
     setGrenades(tickData.grenades || [])
+    setRoundEvents(tickData.events || [])
     setFrame(0)
     if (!f.length) {
       setOverlay({ show: true, icon: '❌', msg: 'No position data for this round', showDownload: false, downloading: false })
@@ -224,6 +305,7 @@ export default function MapViewV2({ demo, demoId }) {
     stopPlayback()
     setFrames([])
     setGrenades([])
+    setRoundEvents([])
     setFrame(0)
     setOverlay(prev => ({
       ...prev,
@@ -296,7 +378,7 @@ export default function MapViewV2({ demo, demoId }) {
         )}
       </div>
 
-      {/* ── Sidebar — V2: controls only, no Players panel ── */}
+      {/* ── Sidebar — V2: controls + event feed ── */}
       <div className={styles.mapSidebar}>
         <div className={styles.mapControls}>
           <label className={styles.mapLabel}>Round</label>
@@ -357,6 +439,16 @@ export default function MapViewV2({ demo, demoId }) {
             </div>
           )}
         </div>
+
+        <EventFeed
+          kills={demo.kills || []}
+          grenades={grenades}
+          events={roundEvents}
+          currentTick={currentTick}
+          roundNum={selectedRound ? parseInt(selectedRound) : null}
+          hasRound={!!selectedRound}
+        />
+
       </div>
 
     </div>

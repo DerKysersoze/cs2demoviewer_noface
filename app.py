@@ -291,6 +291,12 @@ CREATE TABLE IF NOT EXISTS demo_grenades (
     grenades_data  BLOB NOT NULL,
     FOREIGN KEY (demo_id) REFERENCES demos(id)
 );
+
+CREATE TABLE IF NOT EXISTS demo_events (
+    demo_id      TEXT PRIMARY KEY,
+    events_data  BLOB NOT NULL,
+    FOREIGN KEY (demo_id) REFERENCES demos(id)
+);
 """
 
 
@@ -460,7 +466,8 @@ def _db_init():
 
 
 def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
-             ticks_by_round: dict = None, grenades_by_round: dict = None):
+             ticks_by_round: dict = None, grenades_by_round: dict = None,
+             events_by_round: dict = None):
     h = data_dict.get("header") or {}
     has_ticks = bool(ticks_by_round)
     log.info("db_save: starting — demo_id=%s filename=%s map=%s", demo_id, filename, map_name)
@@ -474,7 +481,7 @@ def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             demo_id, filename, map_name,
-            datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            datetime.datetime.now(datetime.UTC),
             h.get("tickrate"), h.get("duration"),
             data_dict.get("ct_team"), data_dict.get("t_team"),
             data_dict.get("ct_wins"), data_dict.get("t_wins"),
@@ -571,6 +578,14 @@ def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
             (demo_id, _blob(grenades_by_round)),
         )
 
+    # ---- demo_events ----
+    con.execute("DELETE FROM demo_events WHERE demo_id = ?", (demo_id,))
+    if events_by_round:
+        con.execute(
+            "INSERT INTO demo_events (demo_id, events_data) VALUES (?,?)",
+            (demo_id, _blob(events_by_round)),
+        )
+
     # ---- demo_cosmetics ----
     con.execute("DELETE FROM demo_cosmetics WHERE demo_id = ?", (demo_id,))
     swag = data_dict.get("swag_breakdown")
@@ -627,6 +642,9 @@ def _db_get(demo_id: str):
     ).fetchone()
     grenades_row   = con.execute(
         "SELECT grenades_data FROM demo_grenades WHERE demo_id = ?", (demo_id,)
+    ).fetchone()
+    events_row     = con.execute(
+        "SELECT events_data FROM demo_events WHERE demo_id = ?", (demo_id,)
     ).fetchone()
     con.close()
 
@@ -710,11 +728,15 @@ def _db_get(demo_id: str):
         grenades_by_round = {}
         if grenades_row and grenades_row["grenades_data"]:
             grenades_by_round = {int(k): v for k, v in _unblob(grenades_row["grenades_data"]).items()}
+        events_by_round = {}
+        if events_row and events_row["events_data"]:
+            events_by_round = {int(k): v for k, v in _unblob(events_row["events_data"]).items()}
         if len(_session_cache) >= MAX_SESSIONS:
             _session_cache.popitem(last=False)
         _session_cache[demo_id] = {
             "ticks":    ticks_by_round,
             "grenades": grenades_by_round,
+            "events":   events_by_round,
             "map_name": row["map"],
         }
         data["has_ticks"] = True
@@ -725,7 +747,7 @@ def _db_get(demo_id: str):
 def _db_delete(demo_id: str) -> bool:
     con = sqlite3.connect(DB_PATH)
     for tbl in ("demo_rounds", "demo_kills", "demo_scoreboard", "demo_aim",
-                "demo_aim_weapons", "demo_aim_hitgroups", "demo_ticks", "demo_grenades", "demo_cosmetics"):
+                "demo_aim_weapons", "demo_aim_hitgroups", "demo_ticks", "demo_grenades", "demo_events", "demo_cosmetics"):
         con.execute(f"DELETE FROM {tbl} WHERE demo_id = ?", (demo_id,))
     cur = con.execute("DELETE FROM demos WHERE id = ?", (demo_id,))
     con.commit()
@@ -878,6 +900,171 @@ def extract_grenades(dem_path, ticks_by_round: dict) -> dict:
 
     total = sum(len(v) for v in result.values())
     log.info("extract_grenades: %d grenades across %d rounds", total, len(result))
+    return result
+
+
+# Friendly display names for bought items
+_BUY_ITEM_NAMES = {
+    "item_kevlar":          "Kevlar",
+    "item_assaultsuit":     "Kevlar + Helmet",
+    "item_defuser":         "Defuse Kit",
+    "weapon_ak47":          "AK-47",
+    "weapon_m4a1":          "M4A4",
+    "weapon_m4a1_silencer": "M4A1-S",
+    "weapon_awp":           "AWP",
+    "weapon_deagle":        "Desert Eagle",
+    "weapon_usp_silencer":  "USP-S",
+    "weapon_glock":         "Glock",
+    "weapon_p250":          "P250",
+    "weapon_fiveseven":     "Five-SeveN",
+    "weapon_tec9":          "Tec-9",
+    "weapon_cz75a":         "CZ75-Auto",
+    "weapon_revolver":      "R8 Revolver",
+    "weapon_mp9":           "MP9",
+    "weapon_mp5sd":         "MP5-SD",
+    "weapon_mac10":         "MAC-10",
+    "weapon_mp7":           "MP7",
+    "weapon_p90":           "P90",
+    "weapon_bizon":         "PP-Bizon",
+    "weapon_ump45":         "UMP-45",
+    "weapon_famas":         "FAMAS",
+    "weapon_galilar":       "Galil AR",
+    "weapon_sg556":         "SG 553",
+    "weapon_aug":           "AUG",
+    "weapon_ssg08":         "SSG 08",
+    "weapon_g3sg1":         "G3SG1",
+    "weapon_scar20":        "SCAR-20",
+    "weapon_xm1014":        "XM1014",
+    "weapon_nova":          "Nova",
+    "weapon_sawedoff":      "Sawed-Off",
+    "weapon_mag7":          "MAG-7",
+    "weapon_m249":          "M249",
+    "weapon_negev":         "Negev",
+    "weapon_flashbang":     "Flashbang",
+    "weapon_smokegrenade":  "Smoke Grenade",
+    "weapon_hegrenade":     "HE Grenade",
+    "weapon_molotov":       "Molotov",
+    "weapon_incgrenade":    "Incendiary Grenade",
+    "weapon_decoy":         "Decoy Grenade",
+}
+
+
+def extract_events(dem_path, ticks_by_round: dict) -> dict:
+    """
+    Returns {round_num: [{type, tick, player, item?}]}.
+    Parses player_buy, bomb_planted, bomb_defused via demoparser2.
+    Gracefully returns {} if demoparser2 is unavailable.
+    """
+    if not dem_path:
+        return {}
+
+    round_ranges = {}
+    for rnum, frames in ticks_by_round.items():
+        if frames:
+            ticks = [f["t"] for f in frames]
+            round_ranges[rnum] = (min(ticks), max(ticks))
+
+    def _tick_to_round(tick):
+        for rnum, (start, end) in round_ranges.items():
+            if start <= tick <= end + 1000:
+                return rnum
+        return None
+
+    result = {}
+    try:
+        from demoparser2 import DemoParser
+        parser = DemoParser(str(dem_path))
+
+        # ---- Buy events ----
+        try:
+            rows = parser.parse_events(["player_buy"], other=["round_num"])
+            if rows:
+                item = rows[0]
+                df = item[1] if isinstance(item, tuple) else item
+                if df is not None and not df.empty:
+                    cols = list(df.columns)
+                    name_col = next((c for c in ["user_name", "player_name", "name"] if c in cols), None)
+                    item_col = next((c for c in ["weapon", "item", "weaponItemId", "weapon_name"] if c in cols), None)
+                    rnum_col = "round_num" if "round_num" in cols else None
+                    for _, row in df.iterrows():
+                        try:
+                            tick  = int(row["tick"])
+                            rnum  = int(row[rnum_col]) if rnum_col else _tick_to_round(tick)
+                            if rnum is None:
+                                continue
+                            raw_item = str(row[item_col]).lower() if item_col else ""
+                            display  = _BUY_ITEM_NAMES.get(raw_item, raw_item.replace("weapon_", "").replace("item_", "").replace("_", " ").title())
+                            player   = str(row[name_col]) if name_col else "?"
+                            result.setdefault(int(rnum), []).append({
+                                "type":   "buy",
+                                "tick":   tick,
+                                "player": player,
+                                "item":   display,
+                            })
+                        except Exception:
+                            continue
+        except Exception as e:
+            log.debug("extract_events: player_buy failed — %s", e)
+
+        # ---- Bomb planted ----
+        try:
+            rows = parser.parse_events(["bomb_planted"], other=["round_num"])
+            if rows:
+                item = rows[0]
+                df = item[1] if isinstance(item, tuple) else item
+                if df is not None and not df.empty:
+                    cols = list(df.columns)
+                    name_col = next((c for c in ["user_name", "player_name", "name"] if c in cols), None)
+                    rnum_col = "round_num" if "round_num" in cols else None
+                    for _, row in df.iterrows():
+                        try:
+                            tick  = int(row["tick"])
+                            rnum  = int(row[rnum_col]) if rnum_col else _tick_to_round(tick)
+                            if rnum is None:
+                                continue
+                            result.setdefault(int(rnum), []).append({
+                                "type":   "plant",
+                                "tick":   tick,
+                                "player": str(row[name_col]) if name_col else "?",
+                            })
+                        except Exception:
+                            continue
+        except Exception as e:
+            log.debug("extract_events: bomb_planted failed — %s", e)
+
+        # ---- Bomb defused ----
+        try:
+            rows = parser.parse_events(["bomb_defused"], other=["round_num"])
+            if rows:
+                item = rows[0]
+                df = item[1] if isinstance(item, tuple) else item
+                if df is not None and not df.empty:
+                    cols = list(df.columns)
+                    name_col = next((c for c in ["user_name", "player_name", "name"] if c in cols), None)
+                    rnum_col = "round_num" if "round_num" in cols else None
+                    for _, row in df.iterrows():
+                        try:
+                            tick  = int(row["tick"])
+                            rnum  = int(row[rnum_col]) if rnum_col else _tick_to_round(tick)
+                            if rnum is None:
+                                continue
+                            result.setdefault(int(rnum), []).append({
+                                "type":   "defuse",
+                                "tick":   tick,
+                                "player": str(row[name_col]) if name_col else "?",
+                            })
+                        except Exception:
+                            continue
+        except Exception as e:
+            log.debug("extract_events: bomb_defused failed — %s", e)
+
+    except ImportError:
+        log.debug("extract_events: demoparser2 not available — skipping")
+    except Exception as e:
+        log.warning("extract_events failed: %s", e)
+
+    total = sum(len(v) for v in result.values())
+    log.info("extract_events: %d events across %d rounds", total, len(result))
     return result
 
 
@@ -1600,11 +1787,13 @@ def parse_demo(dem_path: str) -> dict:
     session_id = str(uuid.uuid4())
     ticks_by_round    = extract_ticks(demo, dem_path)
     grenades_by_round = extract_grenades(dem_path, ticks_by_round)
+    events_by_round   = extract_events(dem_path, ticks_by_round)
     if len(_session_cache) >= MAX_SESSIONS:
         _session_cache.popitem(last=False)
     _session_cache[session_id] = {
         "ticks":    ticks_by_round,
         "grenades": grenades_by_round,
+        "events":   events_by_round,
         "map_name": header["map"],
     }
 
@@ -1655,7 +1844,8 @@ def api_parse():
         cached = _session_cache.get(data["session_id"], {})
         ticks    = cached.get("ticks", {})
         grenades = cached.get("grenades", {})
-        _db_save(data["session_id"], f.filename, data["header"]["map"], data, ticks, grenades)
+        events   = cached.get("events", {})
+        _db_save(data["session_id"], f.filename, data["header"]["map"], data, ticks, grenades, events)
         elapsed = time.monotonic() - _t0
         log.info("parse: completed %s — map=%s rounds=%s ticks=%s (%.2fs)",
                  f.filename, data["header"].get("map"),
@@ -1679,7 +1869,8 @@ def api_ticks(session_id, round_num):
         return jsonify({"error": "Session expired — please re-upload the demo"}), 404
     frames   = session["ticks"].get(round_num, [])
     grenades = session.get("grenades", {}).get(round_num, [])
-    return jsonify({"frames": frames, "count": len(frames), "grenades": grenades})
+    events   = session.get("events",   {}).get(round_num, [])
+    return jsonify({"frames": frames, "count": len(frames), "grenades": grenades, "events": events})
 
 
 @app.route("/api/map_info/<map_name>")
