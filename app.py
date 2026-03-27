@@ -773,7 +773,7 @@ def _get_map_bounds(map_name: str) -> dict:
     return MAP_BOUNDS.get(map_name, {"pos_x": -2476, "pos_y": 3239, "scale": 4.4})
 
 
-def extract_ticks(demo) -> dict:
+def extract_ticks(demo, dem_path=None) -> dict:
     """
     Returns {round_num: [{"t": tick, "p": [{"n": name, "x": x, "y": y, "hp": hp, "alive": bool, "side": side}]}]}
     Downsampled by TICK_SAMPLE for reasonable data size.
@@ -783,6 +783,22 @@ def extract_ticks(demo) -> dict:
         return {}
 
     cols = list(ticks_df.columns)
+    log.info("extract_ticks columns: %s", cols)
+
+    # Augment with armor/helmet via a second demoparser2 pass
+    if dem_path:
+        try:
+            from demoparser2 import DemoParser
+            armor_df = DemoParser(dem_path).parse_ticks(["armor_value", "has_helmet"])
+            if armor_df is not None:
+                merge_on = [c for c in ["tick", "steamid"] if c in armor_df.columns and c in ticks_df.columns]
+                extra    = [c for c in ["armor_value", "has_helmet"] if c in armor_df.columns]
+                if merge_on and extra:
+                    ticks_df = ticks_df.merge(armor_df[merge_on + extra], on=merge_on, how="left")
+                    cols = list(ticks_df.columns)
+                    log.info("extract_ticks columns after armor merge: %s", cols)
+        except Exception as e:
+            log.warning("extract_ticks: armor merge failed — %s", e)
 
     name_col   = next((c for c in ["name", "player_name", "steamid"] if c in cols), None)
     x_col      = next((c for c in ["X", "x", "pos_x"] if c in cols), None)
@@ -1470,7 +1486,7 @@ def parse_demo(dem_path: str) -> dict:
 
     # ---- Tick data (player positions) ----
     session_id = str(uuid.uuid4())
-    ticks_by_round = extract_ticks(demo)
+    ticks_by_round = extract_ticks(demo, dem_path)
     if len(_session_cache) >= MAX_SESSIONS:
         _session_cache.popitem(last=False)
     _session_cache[session_id] = {
