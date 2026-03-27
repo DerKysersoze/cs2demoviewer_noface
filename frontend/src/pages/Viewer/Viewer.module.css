@@ -222,7 +222,7 @@
 /* ── Map Visual Timeline ── */
 .mapLayout {
   display: grid;
-  grid-template-columns: 1fr 220px;
+  grid-template-columns: 190px 1fr 220px;
   gap: 16px;
   align-items: start;
 }
@@ -247,6 +247,61 @@
 }
 .mapOverlayIcon { font-size: 2rem; line-height: 1; }
 .mapOverlayMsg  { color: var(--muted); font-size: .88rem; text-align: center; padding: 0 20px; }
+
+/* ── Per-player health bars ── */
+.healthPanel {
+  align-self: stretch;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.teamSectionLabel {
+  font-size: .6rem;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 3px;
+}
+.teamDivider { height: 1px; background: var(--border); margin: 7px 0; }
+
+.playerRow { display: flex; flex-direction: column; gap: 2px; padding: 2px 0; }
+.playerRowTop { display: flex; align-items: center; gap: 5px; }
+.playerDot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.playerName {
+  flex: 1;
+  font-size: .7rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.playerHp {
+  font-size: .68rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  min-width: 22px;
+  text-align: right;
+}
+.playerDead { color: var(--border) !important; text-decoration: line-through; }
+
+.barTrack {
+  height: 4px;
+  background: var(--surface2);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.barFill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.1s ease, opacity 0.2s ease;
+}
 
 .mapSidebar  { display: flex; flex-direction: column; gap: 12px; }
 .mapControls {

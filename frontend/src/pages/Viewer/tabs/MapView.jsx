@@ -9,6 +9,69 @@ const PLAYER_COLORS = [
   '#e05c00', '#2ec4b6', '#ff4db8', '#80b918', '#adb5bd',
 ]
 
+// ── Per-player horizontal health bars ─────────────────────────
+function PlayerBar({ name, hp, alive, color, hasFrames }) {
+  const dead = hasFrames && (!alive || hp === 0)
+  const pct  = dead ? 0 : hp
+  return (
+    <div className={styles.playerRow}>
+      <div className={styles.playerRowTop}>
+        <span className={styles.playerDot} style={{ background: color }} />
+        <span className={`${styles.playerName}${dead ? ' ' + styles.playerDead : ''}`}>{name}</span>
+        <span className={`${styles.playerHp}${dead ? ' ' + styles.playerDead : ''}`}>
+          {hasFrames ? (dead ? 0 : hp) : '—'}
+        </span>
+      </div>
+      <div className={styles.barTrack}>
+        <div
+          className={styles.barFill}
+          style={{
+            width:      hasFrames ? `${pct}%` : '60%',
+            background: dead ? '#334155' : color,
+            opacity:    dead ? 0.3 : 1,
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
+function PlayerHealthBars({ frames, frame, scoreboard, playerColorMap }) {
+  const hasFrames = frames.length > 0
+  const current   = frames[frame]
+
+  // Build name → {hp, alive} from current frame
+  const stateMap = {}
+  current?.p.forEach(pl => { stateMap[pl.n] = { hp: pl.hp ?? 0, alive: pl.alive } })
+
+  const ct = scoreboard.filter(p => p.team?.toUpperCase().includes('CT'))
+  const t  = scoreboard.filter(p => !p.team?.toUpperCase().includes('CT'))
+
+  const renderTeam = (players) => players.map(p => {
+    const s = stateMap[p.name] ?? { hp: 100, alive: true }
+    return (
+      <PlayerBar
+        key={p.name}
+        name={p.name}
+        hp={s.hp}
+        alive={s.alive}
+        color={playerColorMap[p.name] || '#fff'}
+        hasFrames={hasFrames}
+      />
+    )
+  })
+
+  return (
+    <div className={styles.healthPanel}>
+      <div className={styles.teamSectionLabel} style={{ color: 'var(--ct)' }}>CT</div>
+      {renderTeam(ct)}
+      <div className={styles.teamDivider} />
+      <div className={styles.teamSectionLabel} style={{ color: 'var(--t)' }}>T</div>
+      {renderTeam(t)}
+    </div>
+  )
+}
+
 export default function MapView({ demo, demoId }) {
   const mapName   = demo.header?.map
   const rounds    = demo.rounds    || []
@@ -176,6 +239,14 @@ export default function MapView({ demo, demoId }) {
   // ── Render ─────────────────────────────────────────────────────
   return (
     <div className={styles.mapLayout}>
+
+      {/* ── Health bars (left) ── */}
+      <PlayerHealthBars
+        frames={frames}
+        frame={frame}
+        scoreboard={scoreboard}
+        playerColorMap={playerColorMap}
+      />
 
       {/* ── Canvas area ── */}
       <div className={styles.mapCanvasWrap}>
