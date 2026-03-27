@@ -302,6 +302,21 @@
   border-radius: 99px;
   transition: width 0.1s ease, opacity 0.2s ease;
 }
+.armorRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 1px;
+}
+.armorIcon { font-size: .65rem; flex-shrink: 0; line-height: 1; }
+.armorNum {
+  font-size: .62rem;
+  font-weight: 700;
+  color: var(--muted);
+  min-width: 18px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 
 .mapSidebar  { display: flex; flex-direction: column; gap: 12px; }
 .mapControls {

@@ -784,12 +784,14 @@ def extract_ticks(demo) -> dict:
 
     cols = list(ticks_df.columns)
 
-    name_col  = next((c for c in ["name", "player_name", "steamid"] if c in cols), None)
-    x_col     = next((c for c in ["X", "x", "pos_x"] if c in cols), None)
-    y_col     = next((c for c in ["Y", "y", "pos_y"] if c in cols), None)
-    hp_col    = next((c for c in ["health", "hp", "Health"] if c in cols), None)
-    alive_col = next((c for c in ["is_alive", "alive", "isAlive"] if c in cols), None)
-    side_col  = next((c for c in ["side", "team_side", "Side"] if c in cols), None)
+    name_col   = next((c for c in ["name", "player_name", "steamid"] if c in cols), None)
+    x_col      = next((c for c in ["X", "x", "pos_x"] if c in cols), None)
+    y_col      = next((c for c in ["Y", "y", "pos_y"] if c in cols), None)
+    hp_col     = next((c for c in ["health", "hp", "Health"] if c in cols), None)
+    alive_col  = next((c for c in ["is_alive", "alive", "isAlive"] if c in cols), None)
+    side_col   = next((c for c in ["side", "team_side", "Side"] if c in cols), None)
+    armor_col  = next((c for c in ["armor", "armor_value", "kevlar"] if c in cols), None)
+    helmet_col = next((c for c in ["has_helmet", "helmet"] if c in cols), None)
 
     if not (name_col and x_col and y_col and "tick" in cols and "round_num" in cols):
         log.warning("missing required tick columns — map tracker disabled")
@@ -825,13 +827,23 @@ def extract_ticks(demo) -> dict:
                     py = float(row[y_col]) if not pd.isna(row[y_col]) else 0.0
                 except Exception:
                     px = py = 0.0
+                try:
+                    armor = int(row[armor_col]) if armor_col and not pd.isna(row[armor_col]) else 0
+                except Exception:
+                    armor = 0
+                try:
+                    helmet = bool(row[helmet_col]) if helmet_col and not pd.isna(row[helmet_col]) else False
+                except Exception:
+                    helmet = False
                 players.append({
-                    "n":     str(row[name_col]),
-                    "x":     px,
-                    "y":     py,
-                    "hp":    hp,
-                    "alive": alive,
-                    "side":  str(row[side_col]) if side_col and not pd.isna(row.get(side_col, None)) else "?",
+                    "n":      str(row[name_col]),
+                    "x":      px,
+                    "y":      py,
+                    "hp":     hp,
+                    "alive":  alive,
+                    "side":   str(row[side_col]) if side_col and not pd.isna(row.get(side_col, None)) else "?",
+                    "armor":  armor,
+                    "helmet": helmet,
                 })
             frames.append({"t": int(tick_val), "p": players})
 

@@ -10,11 +10,15 @@ const PLAYER_COLORS = [
 ]
 
 // ── Per-player horizontal health bars ─────────────────────────
-function PlayerBar({ name, hp, alive, color, hasFrames }) {
-  const dead = hasFrames && (!alive || hp === 0)
-  const pct  = dead ? 0 : hp
+function PlayerBar({ name, hp, armor, helmet, alive, color, hasFrames }) {
+  const dead     = hasFrames && (!alive || hp === 0)
+  const hpPct    = dead ? 0 : hp
+  const armorPct = dead ? 0 : (armor ?? 0)
+  const armorColor = helmet ? '#94a3b8' : '#64748b'
+
   return (
     <div className={styles.playerRow}>
+      {/* Name + HP */}
       <div className={styles.playerRowTop}>
         <span className={styles.playerDot} style={{ background: color }} />
         <span className={`${styles.playerName}${dead ? ' ' + styles.playerDead : ''}`}>{name}</span>
@@ -22,16 +26,32 @@ function PlayerBar({ name, hp, alive, color, hasFrames }) {
           {hasFrames ? (dead ? 0 : hp) : '—'}
         </span>
       </div>
+
+      {/* HP bar */}
       <div className={styles.barTrack}>
-        <div
-          className={styles.barFill}
-          style={{
-            width:      hasFrames ? `${pct}%` : '60%',
-            background: dead ? '#334155' : color,
-            opacity:    dead ? 0.3 : 1,
-          }}
-        />
+        <div className={styles.barFill} style={{
+          width:      hasFrames ? `${hpPct}%` : '60%',
+          background: dead ? '#334155' : color,
+          opacity:    dead ? 0.3 : 1,
+        }} />
       </div>
+
+      {/* Armor row — only when frames are loaded */}
+      {hasFrames && (
+        <div className={styles.armorRow}>
+          <span className={styles.armorIcon} title={helmet ? 'Kevlar + Helmet' : 'Kevlar only'}>
+            {helmet ? '🪖' : '🛡'}
+          </span>
+          <div className={styles.barTrack} style={{ flex: 1 }}>
+            <div className={styles.barFill} style={{
+              width:      `${armorPct}%`,
+              background: dead ? '#1e293b' : armorColor,
+              opacity:    dead ? 0.3 : 1,
+            }} />
+          </div>
+          <span className={styles.armorNum}>{dead ? 0 : (armor ?? 0)}</span>
+        </div>
+      )}
     </div>
   )
 }
@@ -40,20 +60,24 @@ function PlayerHealthBars({ frames, frame, scoreboard, playerColorMap }) {
   const hasFrames = frames.length > 0
   const current   = frames[frame]
 
-  // Build name → {hp, alive} from current frame
+  // Build name → {hp, alive, armor, helmet} from current frame
   const stateMap = {}
-  current?.p.forEach(pl => { stateMap[pl.n] = { hp: pl.hp ?? 0, alive: pl.alive } })
+  current?.p.forEach(pl => {
+    stateMap[pl.n] = { hp: pl.hp ?? 0, alive: pl.alive, armor: pl.armor ?? 0, helmet: pl.helmet ?? false }
+  })
 
   const ct = scoreboard.filter(p => p.team?.toUpperCase().includes('CT'))
   const t  = scoreboard.filter(p => !p.team?.toUpperCase().includes('CT'))
 
   const renderTeam = (players) => players.map(p => {
-    const s = stateMap[p.name] ?? { hp: 100, alive: true }
+    const s = stateMap[p.name] ?? { hp: 100, alive: true, armor: 0, helmet: false }
     return (
       <PlayerBar
         key={p.name}
         name={p.name}
         hp={s.hp}
+        armor={s.armor}
+        helmet={s.helmet}
         alive={s.alive}
         color={playerColorMap[p.name] || '#fff'}
         hasFrames={hasFrames}
