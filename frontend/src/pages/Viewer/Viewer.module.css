@@ -219,13 +219,32 @@
 .hgCount  { width: 32px; text-align: right; color: var(--muted); font-size: .78rem; }
 .hgPct    { width: 36px; text-align: right; font-size: .78rem; }
 
-/* ── Map Visual Timeline ── */
+/* ── Map Visual Timeline (legacy) ── */
 .mapLayout {
   display: grid;
   grid-template-columns: 190px 1fr 220px;
   gap: 16px;
   align-items: start;
 }
+
+/* ── Map Visual Timeline V2 ── */
+.mapLayoutV2 {
+  display: grid;
+  grid-template-columns: clamp(160px, 14vw, 220px) minmax(0, calc(100vh - 220px)) clamp(180px, 16vw, 240px);
+  gap: 14px;
+  align-items: start;
+}
+.mapCanvasWrapV2 {
+  position: relative;
+  background: #0a0a10;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  aspect-ratio: 1;
+  width: 100%;
+  max-height: calc(100vh - 220px);
+}
+
 .mapCanvasWrap {
   position: relative;
   background: #0a0a10;
@@ -259,6 +278,43 @@
   flex-direction: column;
   gap: 3px;
 }
+
+/* V2: health panel header */
+.healthPanelHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.healthPanelTitle {
+  font-size: .65rem;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.healthPanelHint {
+  font-size: .58rem;
+  color: var(--muted);
+  margin-left: auto;
+}
+.healthPanelBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* V2: player rows are clickable to toggle hide */
+.playerRowClickable {
+  cursor: pointer;
+  border-radius: 4px;
+  transition: opacity .15s, background .12s;
+  padding: 3px 2px;
+}
+.playerRowClickable:hover { background: var(--surface2); }
+.playerRowHidden { opacity: 0.28; }
 .teamSectionLabel {
   font-size: .6rem;
   font-weight: 800;
@@ -398,4 +454,49 @@
   text-transform: uppercase;
   color: var(--muted);
   min-width: 46px;
+}
+
+/* ── Viewer version toggle switch ── */
+.viewerToggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: .75rem;
+  font-weight: 600;
+  user-select: none;
+}
+.viewerToggleLabel {
+  color: var(--muted);
+  transition: color .15s;
+}
+.viewerToggleLabel.active { color: var(--text); }
+
+.toggleTrack {
+  width: 36px;
+  height: 20px;
+  border-radius: 99px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  position: relative;
+  cursor: pointer;
+  transition: background .2s, border-color .2s;
+  flex-shrink: 0;
+}
+.toggleTrack.on {
+  background: rgba(56,189,248,.2);
+  border-color: var(--ct);
+}
+.toggleThumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform .2s, background .2s;
+}
+.toggleTrack.on .toggleThumb {
+  transform: translateX(16px);
+  background: var(--ct);
 }

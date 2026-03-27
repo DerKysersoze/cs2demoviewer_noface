@@ -10,6 +10,7 @@ import KillFeed      from './tabs/KillFeed'
 import AimBreakdown  from './tabs/AimBreakdown'
 import SwagBreakdown from './tabs/SwagBreakdown'
 import MapView       from './tabs/MapView'
+import MapViewV2     from './tabs/MapViewV2'
 import styles from './Viewer.module.css'
 
 const TABS = [
@@ -21,9 +22,30 @@ const TABS = [
   { id: 'aim',        label: 'Aim Breakdown' },
 ]
 
+function ViewerToggle({ isV2, onToggle }) {
+  return (
+    <div className={styles.viewerToggle}>
+      <span className={`${styles.viewerToggleLabel}${!isV2 ? ' ' + styles.active : ''}`}>Legacy</span>
+      <div className={`${styles.toggleTrack}${isV2 ? ' ' + styles.on : ''}`} onClick={onToggle}>
+        <div className={styles.toggleThumb} />
+      </div>
+      <span className={`${styles.viewerToggleLabel}${isV2 ? ' ' + styles.active : ''}`}>V2</span>
+    </div>
+  )
+}
+
 export default function Viewer() {
   const { id }    = useParams()
   const [tab, setTab] = useState('scoreboard')
+  const [isV2, setIsV2] = useState(() => localStorage.getItem('cs2-viewer-v2') !== 'false')
+
+  function toggleVersion() {
+    setIsV2(prev => {
+      const next = !prev
+      localStorage.setItem('cs2-viewer-v2', String(next))
+      return next
+    })
+  }
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['demo', id],
@@ -33,14 +55,20 @@ export default function Viewer() {
 
   if (isLoading) return (
     <>
-      <SiteHeader><Link to="/" className="btn btn-ghost" style={{ marginLeft: 'auto' }}>← Load another demo</Link></SiteHeader>
+      <SiteHeader>
+        <ViewerToggle isV2={isV2} onToggle={toggleVersion} />
+        <Link to="/" className="btn btn-ghost" style={{ marginLeft: 'auto' }}>← Load another demo</Link>
+      </SiteHeader>
       <div className={styles.results}><p className="muted">Loading demo…</p></div>
     </>
   )
 
   if (isError) return (
     <>
-      <SiteHeader><Link to="/" className="btn btn-ghost" style={{ marginLeft: 'auto' }}>← Load another demo</Link></SiteHeader>
+      <SiteHeader>
+        <ViewerToggle isV2={isV2} onToggle={toggleVersion} />
+        <Link to="/" className="btn btn-ghost" style={{ marginLeft: 'auto' }}>← Load another demo</Link>
+      </SiteHeader>
       <div className={styles.results}><p style={{ color: 'var(--red)' }}>Failed to load demo: {error?.message}</p></div>
     </>
   )
@@ -51,6 +79,7 @@ export default function Viewer() {
   return (
     <>
       <SiteHeader>
+        <ViewerToggle isV2={isV2} onToggle={toggleVersion} />
         <Link to="/" className="btn btn-ghost" style={{ marginLeft: 'auto' }}>
           ← Load another demo
         </Link>
@@ -101,7 +130,10 @@ export default function Viewer() {
         {/* Tab panels */}
         {tab === 'scoreboard' && <Scoreboard scoreboard={d.scoreboard || []} />}
         {tab === 'timeline'   && <Timeline   rounds={d.rounds || []} kills={d.kills || []} ctTeam={d.ct_team} tTeam={d.t_team} />}
-        {tab === 'map'        && <MapView demo={d} demoId={id} />}
+        {tab === 'map'        && (isV2
+          ? <MapViewV2 demo={d} demoId={id} />
+          : <MapView   demo={d} demoId={id} />
+        )}
         {tab === 'rounds'     && <Rounds     rounds={d.rounds || []} />}
         {tab === 'killfeed'   && <KillFeed   kills={d.kills || []} />}
         {tab === 'aim'        && <AimBreakdown  aimBreakdown={d.aim_breakdown || []} />}
