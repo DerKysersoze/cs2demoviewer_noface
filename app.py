@@ -497,6 +497,31 @@ def _db_init():
         con.execute("ALTER TABLE demos DROP COLUMN session_id")
         log.info("DB: dropped demos.session_id")
 
+    # ---- Fix item_name from struct_db JSON (corrects wrong knife names from old hardcoded dict) ----
+    fix_lookup: dict = {}
+    for _p, _is_agent in ((STRUCT_DB_DIR / "base_weapons.json", False),
+                          (STRUCT_DB_DIR / "agents.json",       True)):
+        if _p.exists():
+            try:
+                with open(_p, encoding="utf-8") as _f:
+                    for _item in json.load(_f):
+                        _di = _item.get("def_index")
+                        _nm = _item.get("name")
+                        if _di is not None and _nm:
+                            fix_lookup[int(_di)] = _nm
+            except Exception as _e:
+                log.warning("DB: item_name fix: failed to load %s: %s", _p.name, _e)
+    if fix_lookup:
+        fixed = sum(
+            con.execute(
+                "UPDATE demo_cosmetics SET item_name = ? WHERE def_index = ? AND (item_name != ? OR item_name IS NULL)",
+                (nm, di, nm),
+            ).rowcount
+            for di, nm in fix_lookup.items()
+        )
+        if fixed:
+            log.info("DB: corrected %d demo_cosmetics.item_name rows from struct_db JSON", fixed)
+
     con.commit()
     con.close()
     log.info("DB: schema ready")
@@ -899,57 +924,64 @@ def extract_ticks(demo) -> dict:
     return result
 
 
-_AGENT_NAMES = {
-    4613: "Bloody Darryl The Strapped", 4619: "'Blueberries' Buckshot",
-    4680: "'Two Times' McCoy", 4711: "Cmdr. Mae 'Dead Cold' Jamison",
-    4712: "1st Lieutenant Farlow", 4713: "John 'Van Healen' Kask",
-    4714: "Bio-Haz Specialist", 4715: "Sergeant Bombson",
-    4716: "Chem-Haz Specialist", 4718: "Rezan the Redshirt",
-    4726: "Sir Bloody Miami Darryl", 4727: "Safecracker Voltzmann",
-    4728: "Little Kev", 4730: "Getaway Sally", 4732: "Number K",
-    4733: "Sir Bloody Silent Darryl", 4734: "Sir Bloody Skullhead Darryl",
-    4735: "Sir Bloody Darryl Royale", 4736: "Sir Bloody Loudmouth Darryl",
-    4749: "Sous-Lieutenant Medic", 4750: "Chem-Haz Capitaine",
-    4751: "Chef d'Escadron Rouchard", 4752: "Aspirant",
-    4753: "Officer Jacques Beltram", 4756: "Lieutenant 'Tree Hugger' Farlow",
-    4757: "Cmdr. Davida 'Goggles' Fernandez", 4771: "Cmdr. Frank 'Wet Sox' Baroud",
-    4772: "Lieutenant Rex Krikey", 4773: "Elite Trapper Solman",
-    4774: "Crasswater The Forgotten", 4775: "Arno The Overgrown",
-    4776: "Col. Mangos Dabisi", 4777: "Vypa Sista of the Revolution",
-    4778: "Trapper Aggressor", 4780: "'Medium Rare' Crasswater", 4781: "Trapper",
-    5105: "Ground Rebel", 5106: "Osiris", 5107: "Prof. Shahmat",
-    5108: "The Elite Mr. Muhlik", 5109: "Jungle Rebel",
-    5205: "Soldier", 5206: "Enforcer", 5207: "Slingshot", 5208: "Street Soldier",
-    5305: "Operator", 5306: "Markus Delrow", 5307: "Michael Syfers",
-    5308: "Special Agent Ava", 5400: "3rd Commando Company",
-    5401: "Seal Team 6 Soldier", 5402: "Buckshot", 5403: "'Two Times' McCoy",
-    5404: "Lt. Commander Ricksaw", 5405: "Primeiro Tenente",
-    5500: "Dragomir", 5501: "Maximus", 5502: "Rezan The Ready",
-    5503: "Blackwolf", 5504: "'The Doctor' Romanov", 5505: "Dragomir",
-    5601: "B Squadron Officer", 5602: "D Squadron Officer",
-}
+def _build_item_lookups() -> tuple:
+    """
+    Load weapon/knife names from base_weapons.json and agent names+sides from agents.json.
+    Returns (weapon_names, agent_names, agent_sides).
+    Gloves are not in any struct_db JSON so they are hardcoded here as a supplement.
+    """
+    _GLOVE_NAMES = {
+        5027: "Sport Gloves", 5028: "Driver Gloves", 5029: "Hand Wraps",
+        5030: "Moto Gloves", 5031: "Specialist Gloves", 5032: "Hydra Gloves",
+        5033: "Broken Fang Gloves", 5034: "Bloodhound Gloves",
+    }
+    weapon_names: dict = dict(_GLOVE_NAMES)
+    agent_names:  dict = {}
+    agent_sides:  dict = {}
 
-_WEAPON_NAMES = {
-    1: "Desert Eagle", 2: "Dual Berettas", 3: "Five-SeveN", 4: "Glock-18",
-    7: "AK-47", 8: "AUG", 9: "AWP", 10: "FAMAS", 11: "G3SG1",
-    13: "Galil AR", 14: "M249", 16: "M4A4", 17: "MAC-10", 19: "P90",
-    23: "MP5-SD", 24: "UMP-45", 25: "XM1014", 26: "PP-Bizon",
-    27: "MAG-7", 28: "Negev", 29: "Sawed-Off", 30: "Tec-9",
-    31: "Zeus x27", 32: "P2000", 33: "MP7", 34: "MP9", 35: "Nova",
-    36: "P250", 38: "SCAR-20", 39: "SG 553", 40: "SSG 08",
-    41: "Knife (CT)", 59: "Knife (T)",
-    60: "M4A1-S", 61: "USP-S", 62: "CZ75-Auto", 63: "R8 Revolver",
-    500: "Bayonet", 505: "Flip Knife", 506: "Gut Knife", 507: "Karambit",
-    508: "M9 Bayonet", 509: "Huntsman Knife", 512: "Butterfly Knife",
-    514: "Falchion Knife", 515: "Shadow Daggers", 516: "Bowie Knife",
-    517: "Ursus Knife", 518: "Navaja Knife", 519: "Stiletto Knife",
-    520: "Talon Knife", 521: "Classic Knife", 522: "Paracord Knife",
-    523: "Survival Knife", 525: "Nomad Knife", 526: "Skeleton Knife",
-    # Gloves
-    5027: "Sport Gloves", 5028: "Driver Gloves", 5029: "Hand Wraps",
-    5030: "Moto Gloves", 5031: "Specialist Gloves", 5032: "Hydra Gloves",
-    5033: "Broken Fang Gloves", 5034: "Bloodhound Gloves",
-}
+    p = STRUCT_DB_DIR / "base_weapons.json"
+    if p.exists():
+        try:
+            with open(p, encoding="utf-8") as f:
+                items = json.load(f)
+            for item in items:
+                di = item.get("def_index")
+                nm = item.get("name")
+                if di is not None and nm:
+                    weapon_names[int(di)] = nm
+            log.info("item lookup: loaded %d weapon/knife names from base_weapons.json", len(weapon_names))
+        except Exception as e:
+            log.warning("item lookup: failed to load base_weapons.json: %s", e)
+    else:
+        log.warning("item lookup: base_weapons.json not found — knife names will be incorrect")
+
+    p = STRUCT_DB_DIR / "agents.json"
+    if p.exists():
+        try:
+            with open(p, encoding="utf-8") as f:
+                items = json.load(f)
+            for item in items:
+                di = item.get("def_index")
+                nm = item.get("name")
+                if di is not None and nm:
+                    di = int(di)
+                    # Strip collection suffix: "Agent Name | Collection" → "Agent Name"
+                    agent_names[di] = nm.split(" | ")[0]
+                    team_id = (item.get("team") or {}).get("id", "")
+                    if "terrorist" in team_id and "counter" not in team_id:
+                        agent_sides[di] = "T"
+                    elif "counter-terrorist" in team_id:
+                        agent_sides[di] = "CT"
+            log.info("item lookup: loaded %d agent names from agents.json", len(agent_names))
+        except Exception as e:
+            log.warning("item lookup: failed to load agents.json: %s", e)
+    else:
+        log.warning("item lookup: agents.json not found — agent names unavailable")
+
+    return weapon_names, agent_names, agent_sides
+
+
+_WEAPON_NAMES, _AGENT_NAMES, _AGENT_SIDE_FROM_JSON = _build_item_lookups()
 
 # Side each weapon def_index belongs to ('CT', 'T', or 'both')
 _WEAPON_SIDE: dict = {
@@ -1010,26 +1042,8 @@ _WEAPON_CLASS_TO_DEFIDX: dict = {
     "weapon_revolver":      63,
 }
 
-# Side each agent def_index belongs to
-_AGENT_SIDE: dict = {
-    # T-side agents
-    4613: "T", 4718: "T",
-    4726: "T", 4727: "T", 4728: "T", 4730: "T", 4732: "T",
-    4733: "T", 4734: "T", 4735: "T", 4736: "T",
-    4773: "T", 4774: "T", 4775: "T", 4776: "T", 4777: "T",
-    4778: "T", 4780: "T", 4781: "T",
-    5105: "T", 5106: "T", 5107: "T", 5108: "T", 5109: "T",
-    5205: "T", 5206: "T", 5207: "T", 5208: "T",
-    5500: "T", 5501: "T", 5502: "T", 5503: "T", 5504: "T", 5505: "T",
-    # CT-side agents
-    4619: "CT", 4680: "CT",
-    4711: "CT", 4712: "CT", 4713: "CT", 4714: "CT", 4715: "CT", 4716: "CT",
-    4749: "CT", 4750: "CT", 4751: "CT", 4752: "CT", 4753: "CT", 4756: "CT",
-    4757: "CT", 4771: "CT", 4772: "CT",
-    5305: "CT", 5306: "CT", 5307: "CT", 5308: "CT",
-    5400: "CT", 5401: "CT", 5402: "CT", 5403: "CT", 5404: "CT", 5405: "CT",
-    5601: "CT", 5602: "CT",
-}
+# Side each agent def_index belongs to — built from agents.json at startup
+_AGENT_SIDE: dict = _AGENT_SIDE_FROM_JSON
 
 _WEAR_TIERS = [
     (0.07,  "Factory New"),
