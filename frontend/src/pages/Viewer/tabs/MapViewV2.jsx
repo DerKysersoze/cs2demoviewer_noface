@@ -136,7 +136,9 @@ function buildEventList(kills, grenades, events, roundNum) {
     })
 
   grenades.forEach(g => {
-    list.push({ tick: g.from_tick, kind: g.type, text: `Grenade — ${g.type}` })
+    const who  = g.player ? `${g.player}` : 'Unknown'
+    const kind = g.type.charAt(0).toUpperCase() + g.type.slice(1)
+    list.push({ tick: g.from_tick, kind: g.type, text: `${who} — ${kind}` })
   })
 
   events.forEach(e => {

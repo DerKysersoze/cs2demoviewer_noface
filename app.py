@@ -871,6 +871,7 @@ def extract_grenades(dem_path, ticks_by_round: dict) -> dict:
                 x_col    = next((c for c in ["x", "X"] if c in cols), None)
                 y_col    = next((c for c in ["y", "Y"] if c in cols), None)
                 rnum_col = "round_num" if "round_num" in cols else None
+                name_col = next((c for c in ["user_name", "player_name", "name", "attacker_name"] if c in cols), None)
                 if not tick_col or not x_col or not y_col:
                     log.debug("extract_grenades: %s missing pos columns — %s", event_name, cols)
                     continue
@@ -889,6 +890,7 @@ def extract_grenades(dem_path, ticks_by_round: dict) -> dict:
                             "y":         y,
                             "from_tick": tick,
                             "to_tick":   tick + duration,
+                            "player":    str(row[name_col]) if name_col else None,
                         })
                     except Exception:
                         continue
@@ -964,9 +966,12 @@ def extract_events(dem_path, ticks_by_round: dict) -> dict:
             ticks = [f["t"] for f in frames]
             round_ranges[rnum] = (min(ticks), max(ticks))
 
-    def _tick_to_round(tick):
+    def _tick_to_round(tick, buy_phase=False):
+        # buy_phase=True extends the window backwards to cover freeze time
+        # (~15s = ~1920 ticks at 128hz; use 5000 to be safe across tickrates)
+        lookback = 5000 if buy_phase else 0
         for rnum, (start, end) in round_ranges.items():
-            if start <= tick <= end + 1000:
+            if start - lookback <= tick <= end + 1000:
                 return rnum
         return None
 
@@ -983,13 +988,16 @@ def extract_events(dem_path, ticks_by_round: dict) -> dict:
                 df = item[1] if isinstance(item, tuple) else item
                 if df is not None and not df.empty:
                     cols = list(df.columns)
+                    log.debug("extract_events player_buy columns: %s", cols)
                     name_col = next((c for c in ["user_name", "player_name", "name"] if c in cols), None)
                     item_col = next((c for c in ["weapon", "item", "weaponItemId", "weapon_name"] if c in cols), None)
                     rnum_col = "round_num" if "round_num" in cols else None
                     for _, row in df.iterrows():
                         try:
                             tick  = int(row["tick"])
-                            rnum  = int(row[rnum_col]) if rnum_col else _tick_to_round(tick)
+                            rnum  = int(row[rnum_col]) if rnum_col else _tick_to_round(tick, buy_phase=True)
+                            if rnum is None:
+                                rnum = _tick_to_round(tick, buy_phase=True)
                             if rnum is None:
                                 continue
                             raw_item = str(row[item_col]).lower() if item_col else ""
