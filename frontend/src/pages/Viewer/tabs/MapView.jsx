@@ -110,8 +110,9 @@ export default function MapView({ demo, demoId }) {
 
   // ── State ──────────────────────────────────────────────────────
   const [selectedRound, setSelectedRound] = useState('')
-  const [frames,  setFrames]  = useState([])
-  const [frame,   setFrame]   = useState(0)
+  const [frames,   setFrames]   = useState([])
+  const [grenades, setGrenades] = useState([])
+  const [frame,    setFrame]    = useState(0)
   const [playing, setPlaying] = useState(false)
   const [speed,   setSpeed]   = useState(1)
   const [bounds,  setBounds]  = useState(null)
@@ -201,6 +202,7 @@ export default function MapView({ demo, demoId }) {
     }
     const f = tickData.frames || []
     setFrames(f)
+    setGrenades(tickData.grenades || [])
     setFrame(0)
     if (!f.length) {
       setOverlay({ show: true, icon: '❌', msg: 'No position data for this round', showDownload: false, downloading: false })
@@ -211,14 +213,15 @@ export default function MapView({ demo, demoId }) {
 
   // ── Canvas redraw ──────────────────────────────────────────────
   useEffect(() => {
-    redraw(frames, frame, bounds, mapImageRef.current, hiddenPlayers, playerColorMap)
-  }, [frames, frame, bounds, hiddenPlayers, imageVer, playerColorMap, redraw])
+    redraw(frames, frame, bounds, mapImageRef.current, hiddenPlayers, playerColorMap, grenades)
+  }, [frames, frame, bounds, hiddenPlayers, imageVer, playerColorMap, grenades, redraw])
 
   // ── Handlers ───────────────────────────────────────────────────
   const handleRoundChange = (e) => {
     const val = e.target.value
     stopPlayback()
     setFrames([])
+    setGrenades([])
     setFrame(0)
     setOverlay(prev => ({
       ...prev,

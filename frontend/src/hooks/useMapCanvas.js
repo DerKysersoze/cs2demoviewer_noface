@@ -2,6 +2,14 @@ import { useRef, useCallback } from 'react'
 
 const TRAIL_LEN = 12
 
+// Grenade rendering config
+const NADE_STYLE = {
+  smoke: { fill: 'rgba(160,160,170,0.28)', stroke: 'rgba(200,200,210,0.55)', radius: 144 },
+  fire:  { fill: 'rgba(255,90,0,0.30)',    stroke: 'rgba(255,140,0,0.65)',   radius: 110 },
+  flash: { fill: 'rgba(255,245,100,0.55)', stroke: 'rgba(255,255,200,0.85)', radius: 48  },
+  he:    { fill: 'rgba(220,60,0,0.50)',    stroke: 'rgba(255,120,40,0.80)',  radius: 72  },
+}
+
 function worldToCanvas(wx, wy, bounds, size) {
   return {
     x: ((wx - bounds.pos_x) / bounds.scale / 1024) * size,
@@ -9,10 +17,15 @@ function worldToCanvas(wx, wy, bounds, size) {
   }
 }
 
+// Convert a world-unit radius to canvas pixels
+function worldRadiusToPx(r, bounds, size) {
+  return (r / bounds.scale / 1024) * size
+}
+
 export function useMapCanvas() {
   const canvasRef = useRef(null)
 
-  const redraw = useCallback((frames, frameIdx, bounds, mapImage, hiddenPlayers, playerColorMap) => {
+  const redraw = useCallback((frames, frameIdx, bounds, mapImage, hiddenPlayers, playerColorMap, grenades) => {
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -33,6 +46,26 @@ export function useMapCanvas() {
     if (!frames.length || !bounds) return
     const frame = frames[frameIdx]
     if (!frame) return
+
+    // ── Grenades ──────────────────────────────────────────────
+    if (grenades?.length) {
+      const currentTick = frame.t
+      grenades.forEach(g => {
+        if (currentTick < g.from_tick || currentTick > g.to_tick) return
+        const style = NADE_STYLE[g.type]
+        if (!style) return
+        const pos = worldToCanvas(g.x, g.y, bounds, size)
+        const r   = worldRadiusToPx(style.radius, bounds, size)
+        ctx.beginPath()
+        ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2)
+        ctx.fillStyle = style.fill
+        ctx.fill()
+        ctx.strokeStyle = style.stroke
+        ctx.lineWidth   = 1.5
+        ctx.stroke()
+      })
+      ctx.globalAlpha = 1
+    }
 
     // ── Trails ──────────────────────────────────────────────
     const trails = {}

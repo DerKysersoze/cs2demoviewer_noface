@@ -773,6 +773,86 @@ def _get_map_bounds(map_name: str) -> dict:
     return MAP_BOUNDS.get(map_name, {"pos_x": -2476, "pos_y": 3239, "scale": 4.4})
 
 
+_NADE_EVENT_TYPE = {
+    "smokegrenade_detonate": "smoke",
+    "flashbang_detonate":    "flash",
+    "hegrenade_detonate":    "he",
+    "molotov_detonate":      "fire",
+}
+_NADE_DURATIONS = {
+    "smoke": 1152,   # ~18 s × 64 hz
+    "flash":   96,   # ~1.5 s visual
+    "he":      48,   # ~0.75 s blast marker
+    "fire":   512,   # ~8 s fire
+}
+
+
+def extract_grenades(dem_path, ticks_by_round: dict) -> dict:
+    """
+    Returns {round_num: [{type, x, y, from_tick, to_tick}]}.
+    Requires dem_path for a second demoparser2 pass.
+    """
+    if not dem_path:
+        return {}
+
+    # Build per-round tick ranges so we can assign events to rounds
+    round_ranges = {}
+    for rnum, frames in ticks_by_round.items():
+        if frames:
+            ticks = [f["t"] for f in frames]
+            round_ranges[rnum] = (min(ticks), max(ticks))
+
+    def _tick_to_round(tick):
+        for rnum, (start, end) in round_ranges.items():
+            if start <= tick <= end + 1000:
+                return rnum
+        return None
+
+    result = {}
+    try:
+        from demoparser2 import DemoParser
+        parser = DemoParser(str(dem_path))
+
+        for event_name, nade_type in _NADE_EVENT_TYPE.items():
+            try:
+                df = parser.parse_events(event_name, other=["round_num"])
+                if df is None or df.empty:
+                    continue
+                cols = list(df.columns)
+                tick_col = next((c for c in ["tick"] if c in cols), None)
+                x_col    = next((c for c in ["x", "X"] if c in cols), None)
+                y_col    = next((c for c in ["y", "Y"] if c in cols), None)
+                rnum_col = "round_num" if "round_num" in cols else None
+                if not tick_col or not x_col or not y_col:
+                    log.debug("extract_grenades: %s missing pos columns — %s", event_name, cols)
+                    continue
+                duration = _NADE_DURATIONS[nade_type]
+                for _, row in df.iterrows():
+                    try:
+                        tick = int(row[tick_col])
+                        x    = float(row[x_col])
+                        y    = float(row[y_col])
+                        rnum = int(row[rnum_col]) if rnum_col else _tick_to_round(tick)
+                        if rnum is None:
+                            continue
+                        result.setdefault(int(rnum), []).append({
+                            "type":      nade_type,
+                            "x":         x,
+                            "y":         y,
+                            "from_tick": tick,
+                            "to_tick":   tick + duration,
+                        })
+                    except Exception:
+                        continue
+            except Exception as e:
+                log.debug("extract_grenades: event %s failed — %s", event_name, e)
+
+    except Exception as e:
+        log.warning("extract_grenades failed: %s", e)
+
+    return result
+
+
 def extract_ticks(demo, dem_path=None) -> dict:
     """
     Returns {round_num: [{"t": tick, "p": [{"n": name, "x": x, "y": y, "hp": hp, "alive": bool, "side": side}]}]}
@@ -1486,11 +1566,13 @@ def parse_demo(dem_path: str) -> dict:
 
     # ---- Tick data (player positions) ----
     session_id = str(uuid.uuid4())
-    ticks_by_round = extract_ticks(demo, dem_path)
+    ticks_by_round    = extract_ticks(demo, dem_path)
+    grenades_by_round = extract_grenades(dem_path, ticks_by_round)
     if len(_session_cache) >= MAX_SESSIONS:
         _session_cache.popitem(last=False)
     _session_cache[session_id] = {
         "ticks":    ticks_by_round,
+        "grenades": grenades_by_round,
         "map_name": header["map"],
     }
 
@@ -1571,8 +1653,9 @@ def api_ticks(session_id, round_num):
     session = _session_cache.get(session_id)
     if not session:
         return jsonify({"error": "Session expired — please re-upload the demo"}), 404
-    frames = session["ticks"].get(round_num, [])
-    return jsonify({"frames": frames, "count": len(frames)})
+    frames   = session["ticks"].get(round_num, [])
+    grenades = session.get("grenades", {}).get(round_num, [])
+    return jsonify({"frames": frames, "count": len(frames), "grenades": grenades})
 
 
 @app.route("/api/map_info/<map_name>")
