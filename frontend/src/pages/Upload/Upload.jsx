@@ -59,7 +59,7 @@ export default function Upload() {
         setSingleLabel('Parsing complete — loading viewer…')
         const data = JSON.parse(xhr.responseText)
         // Navigate by demo ID — no sessionStorage needed
-        navigate(`/viewer/${data.demo_id}`)
+        navigate(`/viewer/${data.session_id}`)
       } else {
         let msg = 'Server error'
         try { msg = JSON.parse(xhr.responseText).error || msg } catch {}
