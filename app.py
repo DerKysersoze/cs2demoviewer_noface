@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import sqlite3
-import threading
 import time
 import zlib
 import tempfile
@@ -20,7 +19,6 @@ import uuid
 from collections import OrderedDict
 from pathlib import Path
 
-import requests
 from flask import Flask, g, jsonify, render_template, request, send_file
 
 # ── Logging setup ──────────────────────────────────────────────────────────────
@@ -69,77 +67,6 @@ def _after(response):
 # ── SQLite demo history ────────────────────────────────────────────────────────
 DB_PATH       = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demos.db")
 STRUCT_DB_DIR = Path(__file__).parent / "struct_db"
-IMAGES_DIR    = Path(__file__).parent / "images"
-
-
-def _cache_all_images():
-    """Download and cache images from struct_db JSON files. Runs in a background thread."""
-
-    def _load_json(name):
-        p = STRUCT_DB_DIR / name
-        if not p.exists():
-            return []
-        with open(p, encoding="utf-8") as f:
-            return json.load(f)
-
-    def _cache_url(table_dir, item_id, suffix, url):
-        if not url or not isinstance(url, str) or not url.startswith(("http://", "https://")):
-            return "skip"
-        fname = f"{item_id}{suffix}"
-        if list(table_dir.glob(f"{fname}.*")):
-            return "skip"
-        try:
-            resp = requests.get(url, timeout=15)
-            resp.raise_for_status()
-            ext = ".png" if "png" in resp.headers.get("Content-Type", "") else ".jpg"
-            (table_dir / f"{fname}{ext}").write_bytes(resp.content)
-            log.debug("cached: %s/%s%s", table_dir.name, fname, ext)
-            return "cached"
-        except Exception as e:
-            log.warning("image fetch failed [%s/%s]: %s", table_dir.name, fname, e)
-            return "failed"
-
-    def _process(json_name, dir_name, extractors):
-        """extractors: list of (suffix, fn) where fn(item) -> url or None."""
-        data = _load_json(json_name)
-        if not isinstance(data, list):
-            return
-        table_dir = IMAGES_DIR / dir_name
-        table_dir.mkdir(parents=True, exist_ok=True)
-        c = s = f = 0
-        for item in data:
-            iid = item.get("id", "")
-            for suffix, fn in extractors:
-                r = _cache_url(table_dir, iid, suffix, fn(item))
-                if r == "cached":
-                    c += 1
-                elif r == "skip":
-                    s += 1
-                else:
-                    f += 1
-        log.info("%s images: cached=%d  skipped=%d  failed=%d", dir_name, c, s, f)
-
-    img   = lambda item: item.get("image")
-    orig  = lambda item: (item.get("original") or {}).get("image_inventory")
-    thumb = lambda item: item.get("thumbnail")
-
-    _process("agents.json",            "agents",            [("", img), ("_original_image", orig)])
-    _process("base_weapons.json",      "base_weapons",      [("", img)])
-    _process("collectibles.json",      "collectibles",      [("", img), ("_original_image", orig)])
-    _process("collections.json",       "collections",       [("", img), ("_original_image", orig)])
-    _process("crates.json",            "crates",            [("", img), ("_original_image", orig)])
-    _process("graffiti.json",          "graffiti",          [("", img), ("_original_image", orig)])
-    _process("highlights.json",        "highlights",        [("", img), ("_thumbnail", thumb), ("_original_image", orig)])
-    _process("keychains.json",         "keychains",         [("", img), ("_original_image", orig)])
-    _process("keys.json",              "keys",              [("", img), ("_original_image", orig)])
-    _process("music_kits.json",        "music_kits",        [("", img), ("_original_image", orig)])
-    _process("patches.json",           "patches",           [("", img), ("_original_image", orig)])
-    _process("skins.json",             "skins",             [("", img)])
-    _process("skins_not_grouped.json", "skins_not_grouped", [("", img), ("_original_image", orig)])
-    _process("sticker_slabs.json",     "sticker_slabs",     [("", img), ("_original_image", orig)])
-    _process("stickers.json",          "stickers",          [("", img), ("_original_image", orig)])
-    _process("tools.json",             "tools",             [("", img), ("_original_image", orig)])
-    log.info("image cache: all done")
 
 
 
@@ -190,7 +117,6 @@ def _cosmetics_insert_rows(con, demo_id: str, swag: list):
 
 def _cosmetics_to_swag(rows) -> list:
     """Reconstruct swag_breakdown list from demo_cosmetics rows."""
-    from collections import OrderedDict
     players: dict = OrderedDict()
     for r in rows:
         sid = r["steamid"] or ""
@@ -826,18 +752,6 @@ def _to_pd(df):
         return None
 
 
-def _col(row, *names, default=None):
-    """Return the first non-null value among the given column names."""
-    for name in names:
-        try:
-            v = row.get(name)
-            if v is not None and str(v) != "nan":
-                return v
-        except Exception:
-            pass
-    return default
-
-
 def _safe(val, default="?"):
     try:
         if val is None or (isinstance(val, float) and val != val):
@@ -983,7 +897,7 @@ def _build_item_lookups() -> tuple:
     return weapon_names, agent_names, agent_sides
 
 
-_WEAPON_NAMES, _AGENT_NAMES, _AGENT_SIDE_FROM_JSON = _build_item_lookups()
+_WEAPON_NAMES, _AGENT_NAMES, _AGENT_SIDE = _build_item_lookups()
 
 # Side each weapon def_index belongs to ('CT', 'T', or 'both')
 _WEAPON_SIDE: dict = {
@@ -1043,9 +957,6 @@ _WEAPON_CLASS_TO_DEFIDX: dict = {
     "weapon_cz75a":         62,
     "weapon_revolver":      63,
 }
-
-# Side each agent def_index belongs to — built from agents.json at startup
-_AGENT_SIDE: dict = _AGENT_SIDE_FROM_JSON
 
 _WEAR_TIERS = [
     (0.07,  "Factory New"),
@@ -1251,9 +1162,6 @@ _HITGROUP = {
     "left_arm": "L Arm", "right_arm": "R Arm", "left_leg": "L Leg", "right_leg": "R Leg",
     "neck": "Neck", "gear": "Gear",
 }
-_HITGROUP_ORDER = ["Head", "Neck", "Chest", "Stomach", "L Arm", "R Arm", "L Leg", "R Leg", "Gear", "Generic"]
-
-
 def _calc_kast(kills: list, rounds: list) -> dict:
     """
     Returns {player_name: kast_pct} where KAST = % of rounds with a Kill,
@@ -1695,14 +1603,6 @@ def api_demos_delete(demo_id):
     return jsonify({"error": "Demo not found"}), 404
 
 
-@app.route("/images/<table>/<path:filename>")
-def serve_cached_image(table, filename):
-    path = IMAGES_DIR / table / filename
-    if not path.exists():
-        return "", 404
-    return send_file(str(path))
-
-
 @app.route("/admin")
 def admin():
     return render_template("admin.html")
@@ -1714,7 +1614,6 @@ def api_admin_query():
     if not sql:
         return jsonify({"error": "No query provided"}), 400
     try:
-        import time
         con = sqlite3.connect(DB_PATH)
         con.row_factory = sqlite3.Row
         t0 = time.monotonic()
@@ -1754,8 +1653,6 @@ def api_admin_schema():
 
 
 _load_skin_names()
-
-threading.Thread(target=_cache_all_images, daemon=True, name="image-cache").start()
 
 log.info("startup complete — cs2demviewer ready")
 
