@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CS2 Demo Viewer NoFace</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0d12;
+      --surface: #16161f;
+      --surface2: #1e1e2e;
+      --border: #2a2a3d;
+      --ct: #38bdf8;
+      --t: #fbbf24;
+      --green: #4ade80;
+      --red: #f87171;
+      --muted: #6b7280;
+      --text: #e2e8f0;
+      --radius: 10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    .site-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .site-header h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: .04em; color: #fff; }
+    .site-header span { color: var(--ct); }
+    .back-btn {
+      margin-left: auto;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: .82rem;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: color .15s, border-color .15s;
+    }
+    .back-btn:hover { color: var(--text); border-color: var(--text); }
+
+    /* ── Match header ── */
+    #results { max-width: 1100px; margin: 0 auto; padding: 24px 20px 60px; }
+
+    .match-header {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      margin-bottom: 24px;
+    }
+    .match-score {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      margin-bottom: 20px;
+    }
+    .team-block { text-align: center; min-width: 160px; }
+    .team-name  { font-size: 1rem; font-weight: 700; margin-bottom: 4px; }
+    .team-score { font-size: 3rem; font-weight: 800; line-height: 1; }
+    .score-sep  { font-size: 2rem; color: var(--muted); font-weight: 300; }
+    .ct-color   { color: var(--ct); }
+    .t-color    { color: var(--t);  }
+
+    .meta-pills { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+    .pill {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: .78rem;
+      color: var(--muted);
+    }
+    .pill strong { color: var(--text); }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      padding: 9px 18px;
+      color: var(--muted);
+      font-size: .88rem;
+      font-weight: 600;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color .15s;
+    }
+    .tab-btn:hover  { color: var(--text); }
+    .tab-btn.active { color: var(--ct); border-bottom-color: var(--ct); }
+
+    .tab-panel        { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Tables ── */
+    .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      background: var(--surface2);
+      padding: 10px 14px;
+      text-align: left;
+      font-size: .75rem;
+      font-weight: 700;
+      user-select: none;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    thead th.r { text-align: right; }
+    thead th.sortable { cursor: pointer; }
+    thead th.sortable:hover { color: var(--text); }
+    thead th.sort-asc::after  { content: ' ▲'; color: var(--ct); font-size: .65rem; }
+    thead th.sort-desc::after { content: ' ▼'; color: var(--ct); font-size: .65rem; }
+    tbody tr { border-top: 1px solid var(--border); transition: background .1s; }
+    tbody tr:hover { background: var(--surface2); }
+    td   { padding: 9px 14px; white-space: nowrap; }
+    td.r { text-align: right; }
+
+    /* ── Badges ── */
+    .badge      { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: .72rem; font-weight: 700; }
+    .badge-ct   { background: rgba(56,189,248,.15); color: var(--ct); }
+    .badge-t    { background: rgba(251,191,36,.15);  color: var(--t);  }
+    .badge-hs   { background: rgba(250,204,21,.15);  color: #facc15; }
+    .badge-note { background: var(--surface2); color: var(--muted); font-size: .68rem; }
+
+    .kd-good { color: var(--green); }
+    .kd-bad  { color: var(--red);   }
+    .kd-even { color: var(--text);  }
+
+    /* ── Kill feed controls ── */
+    .kill-controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .kill-controls input, .kill-controls select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 7px 12px;
+      font-size: .85rem;
+    }
+    .kill-controls input { flex: 1; min-width: 160px; }
+    .kill-controls input::placeholder { color: var(--muted); }
+    #kill-count { color: var(--muted); font-size: .82rem; margin-left: auto; }
+
+    /* ── Round table accents ── */
+    .ct-win td:first-child { border-left: 3px solid var(--ct); }
+    .t-win  td:first-child { border-left: 3px solid var(--t);  }
+
+    /* ── Round Timeline ── */
+    .timeline-half       { margin-bottom: 20px; }
+    .timeline-half-label {
+      font-size: .72rem; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+    }
+    .timeline-row  { display: flex; flex-wrap: wrap; gap: 6px; }
+    .round-block {
+      width: 48px; height: 52px; border-radius: 7px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px; cursor: pointer; border: 2px solid transparent;
+      transition: transform .12s, border-color .12s; position: relative;
+    }
+    .round-block:hover  { transform: translateY(-2px); }
+    .round-block.active { border-color: #fff; }
+    .round-block.ct     { background: rgba(56,189,248,.18); }
+    .round-block.t      { background: rgba(251,191,36,.18); }
+    .round-block.ct.active { background: rgba(56,189,248,.35); }
+    .round-block.t.active  { background: rgba(251,191,36,.35); }
+    .round-block .rnum  { font-size: .72rem; font-weight: 700; color: var(--muted); }
+    .round-block .ricon { font-size: 1rem; line-height: 1; }
+    .round-block .rscore { font-size: .65rem; font-weight: 700; }
+    .round-block.ct .rscore { color: var(--ct); }
+    .round-block.t  .rscore { color: var(--t);  }
+
+    .round-block::after {
+      content: attr(data-tip);
+      position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      font-size: .72rem; white-space: nowrap; padding: 4px 8px; border-radius: 5px;
+      pointer-events: none; opacity: 0; transition: opacity .15s; z-index: 10;
+    }
+    .round-block:hover::after { opacity: 1; }
+
+    #round-detail { margin-top: 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    #round-detail-header {
+      padding: 10px 16px; background: var(--surface2);
+      font-weight: 700; font-size: .88rem; display: flex; align-items: center; gap: 10px;
+    }
+    .round-kill-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 16px; border-top: 1px solid var(--border); font-size: .83rem;
+    }
+    .round-kill-row:hover { background: var(--surface2); }
+    .rk-attacker { font-weight: 600; min-width: 130px; }
+    .rk-arrow    { color: var(--muted); font-size: .75rem; }
+    .rk-victim   { color: var(--red);   min-width: 130px; }
+    .rk-weapon   { color: var(--green); min-width: 90px; font-size: .78rem; }
+    .rk-badges   { display: flex; gap: 4px; }
+
+    /* ── Map Viewer ── */
+    #tab-map        { display: none; }
+    #tab-map.active { display: grid; grid-template-columns: 1fr 200px; gap: 16px; }
+
+    .map-canvas-wrap {
+      position: relative; background: #0a0a10;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      overflow: hidden; aspect-ratio: 1;
+    }
+    #map-canvas { width: 100%; height: 100%; display: block; }
+    .map-no-data {
+      position: absolute; inset: 0; display: flex; align-items: center;
+      justify-content: center; color: var(--muted); font-size: .85rem;
+      flex-direction: column; gap: 8px;
+    }
+    .map-sidebar  { display: flex; flex-direction: column; gap: 12px; }
+    .map-controls {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 8px;
+    }
+    .map-controls label { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .map-controls select {
+      width: 100%; background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); border-radius: 6px; padding: 6px 10px; font-size: .83rem;
+    }
+    .map-playback { display: flex; gap: 6px; align-items: center; }
+    .map-btn {
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); border-radius: 6px; padding: 5px 10px;
+      cursor: pointer; font-size: .85rem; transition: background .12s;
+    }
+    .map-btn:hover  { background: var(--border); }
+    .map-btn.active { background: var(--ct); color: #000; border-color: var(--ct); }
+    .map-scrubber   { width: 100%; accent-color: var(--ct); }
+    .map-tick-label { font-size: .72rem; color: var(--muted); text-align: center; }
+
+    .player-legend {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 10px 12px; flex: 1; overflow-y: auto;
+    }
+    .player-legend h4 {
+      font-size: .72rem; text-transform: uppercase; letter-spacing: .07em;
+      color: var(--muted); margin-bottom: 8px;
+    }
+    .legend-row {
+      display: flex; align-items: center; gap: 8px; font-size: .8rem;
+      border-radius: 4px; cursor: pointer; padding: 4px 6px; transition: background .1s;
+    }
+    .legend-row:hover { background: var(--surface2); }
+    .legend-dot  { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .legend-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .legend-side { font-size: .7rem; color: var(--muted); }
+
+    /* ── Aim Breakdown ── */
+    .aim-layout { display: grid; grid-template-columns: 220px 1fr; gap: 16px; align-items: start; }
+    .aim-player-list {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .aim-player-btn {
+      display: block; width: 100%; text-align: left;
+      padding: 9px 14px; background: none; border: none; border-bottom: 1px solid var(--border);
+      color: var(--muted); font-size: .83rem; cursor: pointer; transition: background .1s;
+    }
+    .aim-player-btn:last-child { border-bottom: none; }
+    .aim-player-btn:hover  { background: var(--surface2); color: var(--text); }
+    .aim-player-btn.active { background: var(--surface2); color: var(--ct); font-weight: 700; }
+    .aim-detail { display: flex; flex-direction: column; gap: 14px; }
+    .aim-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px;
+    }
+    .aim-card h4 {
+      font-size: .72rem; text-transform: uppercase; letter-spacing: .07em;
+      color: var(--muted); margin-bottom: 12px;
+    }
+    .aim-stats-row { display: flex; gap: 24px; flex-wrap: wrap; }
+    .aim-stat { display: flex; flex-direction: column; gap: 2px; position: relative; cursor: default; }
+    .aim-stat-val { font-size: 1.4rem; font-weight: 700; color: var(--text); }
+    .aim-stat-lbl { font-size: .72rem; color: var(--muted); border-bottom: 1px dashed var(--border); }
+    [data-tip] { position: relative; }
+    [data-tip]::after {
+      content: attr(data-tip);
+      position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      font-size: .75rem; font-weight: 400; line-height: 1.45;
+      white-space: pre-wrap; max-width: 240px; min-width: 160px;
+      padding: 7px 10px; border-radius: 6px; pointer-events: none;
+      opacity: 0; transition: opacity .15s; z-index: 100; text-align: left;
+    }
+    [data-tip]:hover::after { opacity: 1; }
+    .wpn-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 2px 7px; border-radius: 4px; font-size: .68rem;
+      font-weight: 700; letter-spacing: .04em; color: #0d0d12;
+      white-space: nowrap; cursor: default;
+    }
+    .hg-row { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; font-size: .82rem; }
+    .hg-label { width: 72px; color: var(--muted); flex-shrink: 0; }
+    .hg-bar-bg { flex: 1; height: 10px; background: var(--border); border-radius: 99px; overflow: hidden; }
+    .hg-bar-fill { height: 100%; border-radius: 99px; transition: width .3s; }
+    .hg-count { width: 32px; text-align: right; color: var(--muted); font-size: .78rem; }
+    .hg-pct   { width: 36px; text-align: right; font-size: .78rem; }
+
+    /* ── Map download btn ── */
+    .dl-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      margin-top: 8px; padding: 8px 18px; background: var(--ct);
+      color: #0d0d12; font-weight: 700; font-size: .8rem;
+      border: none; border-radius: 6px; cursor: pointer; transition: opacity .15s;
+    }
+    .dl-btn:hover    { opacity: .85; }
+    .dl-btn:disabled { opacity: .4; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--ct)"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+  <h1>CS2 <span>Demo Viewer</span></h1>
+  <a href="/" class="back-btn">&#8592; Load another demo</a>
+</header>
+
+<div id="results">
+
+  <div class="match-header">
+    <div class="match-score">
+      <div class="team-block">
+        <div class="team-name ct-color" id="ct-name">CT</div>
+        <div class="team-score ct-color" id="ct-score">0</div>
+      </div>
+      <div class="score-sep">:</div>
+      <div class="team-block">
+        <div class="team-name t-color" id="t-name">T</div>
+        <div class="team-score t-color" id="t-score">0</div>
+      </div>
+    </div>
+    <div class="meta-pills" id="meta-pills"></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('scoreboard', this)">Scoreboard</button>
+    <button class="tab-btn" onclick="switchTab('timeline', this)">Timeline</button>
+    <button class="tab-btn" onclick="switchTab('map', this)">Visual Timeline</button>
+    <button class="tab-btn" onclick="switchTab('rounds', this)">Rounds</button>
+    <button class="tab-btn" onclick="switchTab('killfeed', this)">Kill Feed</button>
+    <button class="tab-btn" onclick="switchTab('aim', this)">Aim Breakdown</button>
+    <button class="tab-btn" onclick="switchTab('swag', this)">Swag Breakdown</button>
+  </div>
+
+  <!-- Scoreboard -->
+  <div class="tab-panel active" id="tab-scoreboard">
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:280px">
+        <div style="padding:10px 14px 6px;font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ct)">Counter-Terrorists</div>
+        <div class="table-wrap" style="margin-bottom:0">
+          <table>
+            <thead><tr>
+              <th>Player</th>
+              <th class="r">K</th><th class="r">A</th><th class="r">D</th>
+              <th class="r">K/D</th><th class="r">HS%</th><th class="r">DMG</th>
+            </tr></thead>
+            <tbody id="scoreboard-ct"></tbody>
+          </table>
+        </div>
+      </div>
+      <div style="flex:1;min-width:280px">
+        <div style="padding:10px 14px 6px;font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--t)">Terrorists</div>
+        <div class="table-wrap" style="margin-bottom:0">
+          <table>
+            <thead><tr>
+              <th>Player</th>
+              <th class="r">K</th><th class="r">A</th><th class="r">D</th>
+              <th class="r">K/D</th><th class="r">HS%</th><th class="r">DMG</th>
+            </tr></thead>
+            <tbody id="scoreboard-t"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Timeline -->
+  <div class="tab-panel" id="tab-timeline">
+    <div id="timeline-halves"></div>
+    <div id="round-detail" style="display:none">
+      <div id="round-detail-header"></div>
+      <div id="round-detail-kills"></div>
+    </div>
+  </div>
+
+  <!-- Map -->
+  <div class="tab-panel" id="tab-map">
+    <div class="map-canvas-wrap">
+      <canvas id="map-canvas"></canvas>
+      <div class="map-no-data" id="map-no-data">
+        <span style="font-size:2rem" id="map-no-data-icon">🗺</span>
+        <span id="map-no-data-msg">Select a round to view player positions</span>
+        <button class="dl-btn" id="map-download-btn" onclick="downloadMaps()" style="display:none">
+          Download Map Images (~100 MB)
+        </button>
+      </div>
+    </div>
+    <div class="map-sidebar">
+      <div class="map-controls">
+        <label>Round</label>
+        <select id="map-round-sel" onchange="mapLoadRound(this.value)">
+          <option value="">— select —</option>
+        </select>
+        <label style="margin-top:4px">Playback</label>
+        <div class="map-playback">
+          <button class="map-btn" id="map-play-btn" onclick="mapTogglePlay()">▶ Play</button>
+          <select id="map-speed-sel" onchange="mapSetSpeed(this.value)"
+            style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:.8rem">
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+          </select>
+        </div>
+        <input type="range" class="map-scrubber" id="map-scrubber" min="0" value="0" oninput="mapScrub(this.value)" />
+        <div class="map-tick-label" id="map-tick-label">—</div>
+      </div>
+      <div class="player-legend">
+        <h4>Players</h4>
+        <div id="player-legend-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rounds -->
+  <div class="tab-panel" id="tab-rounds">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Winner</th><th>Reason</th>
+            <th class="r">CT Score</th><th class="r">T Score</th>
+          </tr>
+        </thead>
+        <tbody id="rounds-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Kill Feed -->
+  <div class="tab-panel" id="tab-killfeed">
+    <div class="kill-controls">
+      <input type="text" id="kill-search" placeholder="Search player or weapon…" oninput="filterKills()" />
+      <select id="kill-round" onchange="filterKills()">
+        <option value="">All rounds</option>
+      </select>
+      <span id="kill-count"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Tick</th><th>Rnd</th>
+            <th>Attacker</th><th></th><th>Victim</th>
+            <th>Weapon</th><th>Notes</th>
+          </tr>
+        </thead>
+        <tbody id="kills-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Aim Breakdown -->
+  <div class="tab-panel" id="tab-aim">
+    <div class="aim-layout">
+      <div class="aim-player-list" id="aim-player-list"></div>
+      <div class="aim-detail" id="aim-detail">
+        <div class="aim-card" style="color:var(--muted);font-size:.88rem">Select a player to view their aim breakdown.</div>
+      </div>
+    </div>
+    <div id="aim-weapons" style="margin-top:14px"></div>
+  </div>
+
+  <!-- Swag Breakdown -->
+  <div class="tab-panel" id="tab-swag">
+    <div class="aim-layout">
+      <div class="aim-player-list" id="swag-player-list"></div>
+      <div id="swag-detail" style="flex:1;min-width:0">
+        <div class="aim-card" style="color:var(--muted);font-size:.88rem">Select a player to view their loadout.</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /results -->
+
+<script>
+  // ── Bootstrap: load data from sessionStorage ────────────────
+  const _raw = sessionStorage.getItem('demoData');
+  if (!_raw) { window.location.href = '/'; }
+  const demoData = JSON.parse(_raw);
+
+  // ── State ────────────────────────────────────────────────────
+  let allKills   = [];
+  let allRounds  = [];
+  let selectedRound = null;
+
+  // ── Render ───────────────────────────────────────────────────
+  function renderResults(d) {
+    document.getElementById('ct-name').textContent  = d.ct_team;
+    document.getElementById('t-name').textContent   = d.t_team;
+    document.getElementById('ct-score').textContent = d.ct_wins;
+    document.getElementById('t-score').textContent  = d.t_wins;
+
+    const h = d.header;
+    document.getElementById('meta-pills').innerHTML = [
+      ['File', d.filename], ['Map', h.map],
+      ['Tickrate', h.tickrate + ' Hz'], ['Duration', h.duration], ['Rounds', d.total_rounds],
+    ].map(([k, v]) => `<div class="pill"><strong>${k}:</strong> ${v}</div>`).join('');
+
+    // Scoreboard — split by side
+    function scoreRows(players) {
+      return players.map(p => {
+        const kdClass  = p.kd >= 1.1 ? 'kd-good' : p.kd < 0.9 ? 'kd-bad' : 'kd-even';
+        const nameHtml = p.steamid
+          ? `<a href="https://steamcommunity.com/profiles/${esc(p.steamid)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline dotted;text-underline-offset:3px">${esc(p.name)}</a>`
+          : esc(p.name);
+        return `<tr>
+          <td><strong>${nameHtml}</strong></td>
+          <td class="r">${p.kills}</td>
+          <td class="r">${p.assists}</td>
+          <td class="r">${p.deaths}</td>
+          <td class="r ${kdClass}">${p.kd.toFixed(2)}</td>
+          <td class="r">${p.hs_pct}%</td>
+          <td class="r">${p.dmg.toLocaleString()}</td>
+        </tr>`;
+      }).join('');
+    }
+    const ctPlayers = d.scoreboard.filter(p => p.team.toUpperCase().includes('CT'));
+    const tPlayers  = d.scoreboard.filter(p => !p.team.toUpperCase().includes('CT'));
+    document.getElementById('scoreboard-ct').innerHTML = scoreRows(ctPlayers);
+    document.getElementById('scoreboard-t').innerHTML  = scoreRows(tPlayers);
+
+    // Rounds table
+    document.getElementById('rounds-body').innerHTML = d.rounds.map(r => {
+      const ct       = r.winner_side.toUpperCase().includes('CT');
+      const winBadge = ct
+        ? `<span class="badge badge-ct">CT Win</span>`
+        : `<span class="badge badge-t">T Win</span>`;
+      return `<tr class="${ct ? 'ct-win' : 't-win'}">
+        <td>${r.round_num}</td>
+        <td>${winBadge}</td>
+        <td>${esc(r.reason)}</td>
+        <td class="r ct-color">${r.ct_score}</td>
+        <td class="r t-color">${r.t_score}</td>
+      </tr>`;
+    }).join('');
+
+    // Timeline + map init
+    allRounds = d.rounds;
+    renderTimeline(d.rounds, d.ct_team, d.t_team);
+    try { mapInit(d); } catch(e) { console.error('mapInit failed:', e); }
+
+    // Aim breakdown
+    renderAimPlayerList(d.aim_breakdown || []);
+
+    // Swag breakdown
+    renderSwagBreakdown(d.swag_breakdown || []);
+
+    // Kill feed
+    allKills = d.kills;
+    const roundSel    = document.getElementById('kill-round');
+    const uniqueRounds = [...new Set(d.kills.map(k => k.round_num))].sort((a, b) => a - b);
+    roundSel.innerHTML = '<option value="">All rounds</option>' +
+      uniqueRounds.map(r => `<option value="${r}">Round ${r}</option>`).join('');
+    filterKills();
+  }
+
+  function filterKills() {
+    const q   = document.getElementById('kill-search').value.toLowerCase();
+    const rnd = document.getElementById('kill-round').value;
+    const filtered = allKills.filter(k => {
+      const matchText  = !q ||
+        k.attacker.toLowerCase().includes(q) ||
+        k.victim.toLowerCase().includes(q)   ||
+        k.weapon.toLowerCase().includes(q);
+      const matchRound = !rnd || String(k.round_num) === rnd;
+      return matchText && matchRound;
+    });
+
+    document.getElementById('kill-count').textContent = `${filtered.length} kills`;
+    document.getElementById('kills-body').innerHTML = filtered.map(k => {
+      const notes  = [
+        k.through_smoke ? '<span class="badge badge-note">smoke</span>'    : '',
+        k.no_scope      ? '<span class="badge badge-note">no-scope</span>' : '',
+        k.penetrated    ? '<span class="badge badge-note">wall</span>'     : '',
+      ].filter(Boolean).join(' ');
+      const hsTag   = k.headshot ? '<span class="badge badge-hs">HS</span>' : '';
+      const attCt   = k.attacker_team.toUpperCase().includes('CT');
+      const attClass = attCt ? 'ct-color' : 't-color';
+      return `<tr>
+        <td style="color:var(--muted)">${k.tick}</td>
+        <td style="color:var(--muted)">${k.round_num}</td>
+        <td class="${attClass}"><strong>${esc(k.attacker)}</strong></td>
+        <td>${hsTag}</td>
+        <td style="color:var(--red)">${esc(k.victim)}</td>
+        <td style="color:var(--green)">${esc(k.weapon)}</td>
+        <td>${notes}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Tabs ─────────────────────────────────────────────────────
+  function switchTab(name, btn) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    btn.classList.add('active');
+  }
+
+  // ── Timeline ─────────────────────────────────────────────────
+  const REASON_ICON = {
+    'Bomb Defused': '🔵', 'Bomb Exploded': '💥', 'Target Bombed': '💥',
+    'Ct Win': '🛡', 'Counter Terrorists Win': '🛡',
+    'T Win': '💣', 'Terrorists Win': '💣', 'Target Saved': '⏱',
+  };
+
+  function reasonIcon(reason) {
+    for (const [k, v] of Object.entries(REASON_ICON))
+      if (reason.toLowerCase().includes(k.toLowerCase())) return v;
+    return '🎯';
+  }
+
+  function renderTimeline(rounds, ctTeam, tTeam) {
+    const container = document.getElementById('timeline-halves');
+    container.innerHTML = '';
+    const halves = [];
+    rounds.forEach(r => {
+      let hi = r.round_num <= 12 ? 0 : r.round_num <= 24 ? 1 : 2 + Math.floor((r.round_num - 25) / 6);
+      if (!halves[hi]) halves[hi] = [];
+      halves[hi].push(r);
+    });
+    const halfLabels = ['1st Half', '2nd Half'];
+    halves.forEach((group, idx) => {
+      if (!group) return;
+      const label = halfLabels[idx] || `Overtime ${idx - 1}`;
+      const ctW = group.filter(r => r.winner_side === 'CT').length;
+      const tW  = group.length - ctW;
+      const halfDiv = document.createElement('div');
+      halfDiv.className = 'timeline-half';
+      halfDiv.innerHTML = `<div class="timeline-half-label">${label} &nbsp;
+        <span style="color:var(--ct)">${ctTeam} ${ctW}</span>
+        <span style="color:var(--muted)"> – </span>
+        <span style="color:var(--t)">${tW} ${tTeam}</span></div>`;
+      const row = document.createElement('div');
+      row.className = 'timeline-row';
+      group.forEach(r => {
+        const isCt = r.winner_side === 'CT';
+        const block = document.createElement('div');
+        block.className   = `round-block ${isCt ? 'ct' : 't'}`;
+        block.dataset.tip = r.reason;
+        block.innerHTML   = `<span class="rnum">${r.round_num}</span>
+          <span class="ricon">${reasonIcon(r.reason)}</span>
+          <span class="rscore">${r.ct_score}:${r.t_score}</span>`;
+        block.addEventListener('click', () => selectRound(r.round_num, block));
+        row.appendChild(block);
+      });
+      halfDiv.appendChild(row);
+      container.appendChild(halfDiv);
+    });
+  }
+
+  function selectRound(roundNum, blockEl) {
+    if (selectedRound === roundNum) {
+      selectedRound = null;
+      document.querySelectorAll('.round-block').forEach(b => b.classList.remove('active'));
+      document.getElementById('round-detail').style.display = 'none';
+      return;
+    }
+    selectedRound = roundNum;
+    document.querySelectorAll('.round-block').forEach(b => b.classList.remove('active'));
+    blockEl.classList.add('active');
+
+    const round    = allRounds.find(r => r.round_num === roundNum);
+    const kills    = allKills.filter(k => k.round_num === roundNum);
+    const isCt     = round.winner_side === 'CT';
+    const winColor = isCt ? 'var(--ct)' : 'var(--t)';
+
+    document.getElementById('round-detail-header').innerHTML = `
+      <span style="color:${winColor};font-size:1.1rem">${reasonIcon(round.reason)}</span>
+      <span>Round ${round.round_num}</span>
+      <span class="badge ${isCt ? 'badge-ct' : 'badge-t'}">${round.winner_side} Win</span>
+      <span style="color:var(--muted);font-weight:400">${esc(round.reason)}</span>
+      <span style="margin-left:auto;color:var(--muted);font-weight:400;font-size:.8rem">${kills.length} kills</span>`;
+
+    document.getElementById('round-detail-kills').innerHTML = kills.length === 0
+      ? `<div class="round-kill-row" style="color:var(--muted)">No kill data for this round.</div>`
+      : kills.map(k => {
+          const badges = [
+            k.headshot      ? '<span class="badge badge-hs">HS</span>'         : '',
+            k.through_smoke ? '<span class="badge badge-note">smoke</span>'    : '',
+            k.no_scope      ? '<span class="badge badge-note">no-scope</span>' : '',
+            k.penetrated    ? '<span class="badge badge-note">wall</span>'     : '',
+          ].filter(Boolean).join('');
+          return `<div class="round-kill-row">
+            <span class="rk-attacker ct-color">${esc(k.attacker)}</span>
+            <span class="rk-arrow">›</span>
+            <span class="rk-weapon">${esc(k.weapon)}</span>
+            <span class="rk-arrow">›</span>
+            <span class="rk-victim">${esc(k.victim)}</span>
+            <span class="rk-badges">${badges}</span>
+          </div>`;
+        }).join('');
+
+    const detail = document.getElementById('round-detail');
+    detail.style.display = 'block';
+    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  // ── Aim Breakdown ────────────────────────────────────────────
+  const WEAPON_META = {
+    ak47:          { cat:'rifle',   abbr:'AK-47',  label:'AK-47' },
+    m4a1:          { cat:'rifle',   abbr:'M4A4',   label:'M4A4' },
+    m4a1_silencer: { cat:'rifle',   abbr:'M4A1-S', label:'M4A1-S' },
+    sg556:         { cat:'rifle',   abbr:'SG553',  label:'SG 553' },
+    aug:           { cat:'rifle',   abbr:'AUG',    label:'AUG' },
+    galilar:       { cat:'rifle',   abbr:'GALIL',  label:'Galil AR' },
+    galil:         { cat:'rifle',   abbr:'GALIL',  label:'Galil AR' },
+    famas:         { cat:'rifle',   abbr:'FAMAS',  label:'FAMAS' },
+    awp:           { cat:'sniper',  abbr:'AWP',    label:'AWP' },
+    ssg08:         { cat:'sniper',  abbr:'SSG08',  label:'SSG 08' },
+    g3sg1:         { cat:'sniper',  abbr:'G3SG1',  label:'G3SG1' },
+    scar20:        { cat:'sniper',  abbr:'SCAR20', label:'SCAR-20' },
+    deagle:        { cat:'pistol',  abbr:'DEAGLE', label:'Desert Eagle' },
+    glock:         { cat:'pistol',  abbr:'GLOCK',  label:'Glock-18' },
+    usp_silencer:  { cat:'pistol',  abbr:'USP-S',  label:'USP-S' },
+    hkp2000:       { cat:'pistol',  abbr:'P2000',  label:'P2000' },
+    p250:          { cat:'pistol',  abbr:'P250',   label:'P250' },
+    tec9:          { cat:'pistol',  abbr:'TEC-9',  label:'Tec-9' },
+    fiveseven:     { cat:'pistol',  abbr:'57E',    label:'Five-SeveN' },
+    cz75a:         { cat:'pistol',  abbr:'CZ75',   label:'CZ75-Auto' },
+    revolver:      { cat:'pistol',  abbr:'R8',     label:'R8 Revolver' },
+    elite:         { cat:'pistol',  abbr:'ELITE',  label:'Dual Berettas' },
+    mp9:           { cat:'smg',     abbr:'MP9',    label:'MP9' },
+    mp7:           { cat:'smg',     abbr:'MP7',    label:'MP7' },
+    mp5sd:         { cat:'smg',     abbr:'MP5-SD', label:'MP5-SD' },
+    ump45:         { cat:'smg',     abbr:'UMP-45', label:'UMP-45' },
+    p90:           { cat:'smg',     abbr:'P90',    label:'P90' },
+    bizon:         { cat:'smg',     abbr:'BIZON',  label:'PP-Bizon' },
+    mac10:         { cat:'smg',     abbr:'MAC-10', label:'MAC-10' },
+    nova:          { cat:'shotgun', abbr:'NOVA',   label:'Nova' },
+    xm1014:        { cat:'shotgun', abbr:'XM1014', label:'XM1014' },
+    mag7:          { cat:'shotgun', abbr:'MAG-7',  label:'MAG-7' },
+    sawedoff:      { cat:'shotgun', abbr:'SAWOFF', label:'Sawed-Off' },
+    m249:          { cat:'heavy',   abbr:'M249',   label:'M249' },
+    negev:         { cat:'heavy',   abbr:'NEGEV',  label:'Negev' },
+    flashbang:     { cat:'grenade', abbr:'FLASH',  label:'Flashbang' },
+    smokegrenade:  { cat:'grenade', abbr:'SMOKE',  label:'Smoke Grenade' },
+    hegrenade:     { cat:'grenade', abbr:'HE',     label:'HE Grenade' },
+    molotov:       { cat:'grenade', abbr:'MOLOTV', label:'Molotov' },
+    incgrenade:    { cat:'grenade', abbr:'INC',    label:'Incendiary' },
+    decoy:         { cat:'grenade', abbr:'DECOY',  label:'Decoy Grenade' },
+    knife:                { cat:'knife',   abbr:'KNIFE',  label:'Knife' },
+    knife_t:              { cat:'knife',   abbr:'KNIFE',  label:'Knife' },
+    bayonet:              { cat:'knife',   abbr:'KNIFE',  label:'Bayonet' },
+    knife_survival_bowie: { cat:'knife',   abbr:'KNIFE',  label:'Bowie Knife' },
+    knife_tactical:       { cat:'knife',   abbr:'KNIFE',  label:'Huntsman Knife' },
+    knife_flip:           { cat:'knife',   abbr:'KNIFE',  label:'Flip Knife' },
+    knife_gut:            { cat:'knife',   abbr:'KNIFE',  label:'Gut Knife' },
+    knife_karambit:       { cat:'knife',   abbr:'KNIFE',  label:'Karambit' },
+    knife_m9_bayonet:     { cat:'knife',   abbr:'KNIFE',  label:'M9 Bayonet' },
+    knife_falchion:       { cat:'knife',   abbr:'KNIFE',  label:'Falchion Knife' },
+    knife_butterfly:      { cat:'knife',   abbr:'KNIFE',  label:'Butterfly Knife' },
+    knife_push:           { cat:'knife',   abbr:'KNIFE',  label:'Shadow Daggers' },
+    knife_cord:           { cat:'knife',   abbr:'KNIFE',  label:'Paracord Knife' },
+    knife_canis:          { cat:'knife',   abbr:'KNIFE',  label:'Survival Knife' },
+    knife_ursus:          { cat:'knife',   abbr:'KNIFE',  label:'Ursus Knife' },
+    knife_gypsy_jackknife:{ cat:'knife',   abbr:'KNIFE',  label:'Navaja Knife' },
+    knife_outdoor:        { cat:'knife',   abbr:'KNIFE',  label:'Nomad Knife' },
+    knife_stiletto:       { cat:'knife',   abbr:'KNIFE',  label:'Stiletto Knife' },
+    knife_widowmaker:     { cat:'knife',   abbr:'KNIFE',  label:'Talon Knife' },
+    knife_skeleton:       { cat:'knife',   abbr:'KNIFE',  label:'Skeleton Knife' },
+    knife_kukri:          { cat:'knife',   abbr:'KNIFE',  label:'Kukri Knife' },
+    taser:                { cat:'pistol',  abbr:'ZEUS',   label:'Zeus x27' },
+    inferno:              { cat:'grenade', abbr:'FIRE',   label:'Molotov Fire' },
+  };
+  const WEAPON_CAT_COLOR = {
+    rifle:'#ff9f1c', sniper:'#f87171', pistol:'#38bdf8',
+    smg:'#6bcb77',   shotgun:'#fbbf24', heavy:'#c77dff',
+    grenade:'#2ec4b6', knife:'#94a3b8', unknown:'#6b7280',
+  };
+  function weaponIcon(raw, catHint) {
+    const key  = (raw || '').toLowerCase().replace(/^weapon_/, '');
+    const meta = WEAPON_META[key];
+    const cat  = meta ? meta.cat   : (catHint || 'unknown');
+    const abbr = meta ? meta.abbr  : (catHint === 'knife' ? 'KNIFE' : raw.toUpperCase().slice(0, 6));
+    const label= meta ? meta.label : raw;
+    const bg   = WEAPON_CAT_COLOR[cat] || WEAPON_CAT_COLOR.unknown;
+    return `<span class="wpn-icon" style="background:${bg}" data-tip="${label}\nCategory: ${cat}">${abbr}</span>`;
+  }
+
+  const HG_ORDER  = ['Head','Neck','Chest','Stomach','L Arm','R Arm','L Leg','R Leg','Gear','Generic'];
+  const HG_COLORS = {
+    Head: '#f87171', Neck: '#fb923c', Chest: '#60a5fa', Stomach: '#a78bfa',
+    'L Arm': '#34d399', 'R Arm': '#34d399', 'L Leg': '#fbbf24', 'R Leg': '#fbbf24',
+    Gear: '#94a3b8', Generic: '#6b7280',
+  };
+  let aimData = [];
+  let currentWpnRows = [];
+  let wpnSortCol = 'kills';
+  let wpnSortDir = -1; // -1 = desc, 1 = asc
+
+  function renderWpnTable() {
+    const sorted = [...currentWpnRows].sort((a, b) => {
+      const av = a[wpnSortCol] ?? -Infinity;
+      const bv = b[wpnSortCol] ?? -Infinity;
+      if (typeof av === 'string') return wpnSortDir * av.localeCompare(bv);
+      return wpnSortDir * (bv - av);
+    });
+    document.querySelectorAll('#wpn-table th.sortable').forEach(th => {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (th.dataset.col === wpnSortCol)
+        th.classList.add(wpnSortDir === -1 ? 'sort-desc' : 'sort-asc');
+    });
+    document.getElementById('wpn-tbody').innerHTML = sorted.map(w => `<tr>
+      <td>${weaponIcon(w.weapon)}</td>
+      <td class="r">${w.shots ?? '—'}</td>
+      <td class="r">${w.hits}</td>
+      <td class="r">${w.acc != null ? w.acc + '%' : '—'}</td>
+      <td class="r">${w.dmg.toLocaleString()}</td>
+      <td class="r">${w.avgDmg}</td>
+      <td class="r">${w.kills}</td>
+      <td class="r" style="color:var(--red)">${w.hs_kills}</td>
+    </tr>`).join('');
+  }
+
+  // ── Swag Breakdown ──────────────────────────────────────────────────────────
+  const WEAR_COLOR = {
+    'Factory New':   '#4ade80',
+    'Minimal Wear':  '#86efac',
+    'Field-Tested':  '#fbbf24',
+    'Well-Worn':     '#fb923c',
+    'Battle-Scarred':'#f87171',
+  };
+
+  let swagData = [];
+
+  function renderSwagBreakdown(data) {
+    swagData = data || [];
+    const list = document.getElementById('swag-player-list');
+    if (!swagData.length) {
+      list.innerHTML = '';
+      document.getElementById('swag-detail').innerHTML =
+        '<div class="aim-card" style="color:var(--muted);font-size:.88rem">No cosmetic data found in this demo.</div>';
+      return;
+    }
+    list.innerHTML = swagData.map((p, i) => {
+      const side = p.team === 'CT' ? 'ct' : 't';
+      return `<button class="aim-player-btn" onclick="renderSwagPlayer(${i}, this)">
+        <span class="badge badge-${side}" style="margin-right:6px;font-size:.6rem">${p.team}</span>${esc(p.name)}
+      </button>`;
+    }).join('');
+  }
+
+  function renderSwagPlayer(idx, btn) {
+    document.querySelectorAll('#swag-player-list .aim-player-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    const p = swagData[idx];
+
+    function weaponRows(weapons) {
+      if (!weapons.length) return `<tr><td colspan="7" style="color:var(--muted);font-size:.82rem;padding:10px 14px">No skinned weapons</td></tr>`;
+      return weapons.map(w => {
+        const tierColor = WEAR_COLOR[w.wear_tier] || 'var(--muted)';
+        const skinCell  = w.skin_name
+          ? `<span style="color:var(--text)">${esc(w.skin_name)}</span>`
+          : `<span style="color:var(--muted)">Vanilla</span>`;
+        const wearCell  = w.wear != null
+          ? `<span style="color:${tierColor}">${w.wear_tier}</span><br><span style="color:var(--muted);font-size:.72rem">${w.wear}</span>`
+          : `<span style="color:var(--muted)">—</span>`;
+        const nameCell  = w.custom_name
+          ? `${esc(w.item_name)}<br><span style="color:var(--ct);font-size:.72rem">"${esc(w.custom_name)}"</span>`
+          : esc(w.item_name);
+        const stCell    = w.stattrak != null
+          ? `<span style="color:#e8a400;font-size:.78rem">ST™ ${w.stattrak.toLocaleString()}</span>`
+          : `<span style="color:var(--muted)">—</span>`;
+        const seedCell  = w.paint_seed != null ? w.paint_seed : '—';
+        return `<tr>
+          <td style="white-space:nowrap">${weaponIcon(w.item_name, w.weapon_cat)} <span style="font-size:.84rem">${nameCell}</span></td>
+          <td>${skinCell}</td>
+          <td>${wearCell}</td>
+          <td class="r" style="color:var(--muted);font-size:.8rem">${seedCell}</td>
+          <td class="r">${stCell}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function sideTable(label, color, agent, weapons) {
+      const agentRow = agent
+        ? `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);margin-bottom:4px">
+             <span style="font-size:.65rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);min-width:46px">Agent</span>
+             <span style="font-size:.88rem">${esc(agent.item_name)}</span>
+           </div>`
+        : '';
+      return `<div class="aim-card" style="margin-bottom:14px">
+        <div style="font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+                    color:${color};margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:6px">${label}</div>
+        ${agentRow}
+        <div class="table-wrap" style="border:none;border-radius:0;margin:0">
+          <table>
+            <thead><tr>
+              <th>Weapon</th>
+              <th>Skin</th>
+              <th>Wear</th>
+              <th class="r">Seed</th>
+              <th class="r">StatTrak</th>
+            </tr></thead>
+            <tbody>${weaponRows(weapons)}</tbody>
+          </table>
+        </div>
+      </div>`;
+    }
+
+    const nameHtml = p.steamid
+      ? `<a href="https://steamcommunity.com/profiles/${esc(p.steamid)}" target="_blank" rel="noopener"
+           style="color:inherit;text-decoration:underline dotted;text-underline-offset:3px">${esc(p.name)}</a>`
+      : esc(p.name);
+    const badgeSide = p.team === 'CT' ? 'ct' : 't';
+
+    document.getElementById('swag-detail').innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+        <span class="badge badge-${badgeSide}">${p.team}</span>
+        <strong style="font-size:1rem">${nameHtml}</strong>
+      </div>
+      ${sideTable('CT Side', 'var(--ct)', p.ct_agent, p.ct_weapons)}
+      ${sideTable('T Side',  'var(--t)',  p.t_agent,  p.t_weapons)}
+    `;
+  }
+
+  function renderAimPlayerList(data) {
+    aimData = data;
+    document.getElementById('aim-player-list').innerHTML = data.map((p, i) =>
+      `<button class="aim-player-btn" onclick="renderAimPlayer(${i}, this)">${esc(p.name)}</button>`
+    ).join('');
+  }
+
+  function renderAimPlayer(idx, btn) {
+    document.querySelectorAll('.aim-player-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const p = aimData[idx];
+    const th = p.total_hits;
+
+    // Summary stats
+    const summary = `
+      <div class="aim-card">
+        <h4>Summary — ${esc(p.name)}</h4>
+        <div class="aim-stats-row">
+          <div class="aim-stat" data-tip="Every bullet or grenade hit\nregistered on an enemy,\nexcluding self-damage.">
+            <span class="aim-stat-val">${p.total_hits}</span><span class="aim-stat-lbl">Total Hits</span></div>
+          <div class="aim-stat" data-tip="Sum of all hp damage dealt\nto enemies across the match\n(capped at target's remaining hp).">
+            <span class="aim-stat-val">${p.total_dmg.toLocaleString()}</span><span class="aim-stat-lbl">Total Damage</span></div>
+          <div class="aim-stat" data-tip="Total damage ÷ total hits.\nHigher = better shot selection\nor use of high-damage weapons.">
+            <span class="aim-stat-val">${p.avg_dmg}</span><span class="aim-stat-lbl">Avg Dmg / Hit</span></div>
+          <div class="aim-stat" data-tip="% of all hits that landed\non the head hitbox.\nDoes not require a kill.">
+            <span class="aim-stat-val" style="color:var(--red)">${p.hs_hit_pct}%</span><span class="aim-stat-lbl">Headshot Hit %</span></div>
+          <div class="aim-stat" data-tip="Kill / Assist / Survived / Traded.\n% of rounds where the player:\n• got a kill (K)\n• got an assist (A)\n• survived the round (S)\n• was killed but their killer\n  died within 5 s (T).\nGood players typically 70 %+.">
+            <span class="aim-stat-val" style="color:var(--green)">${p.kast}%</span><span class="aim-stat-lbl">KAST</span></div>
+          <div class="aim-stat" data-tip="Total bullets fired (grenades\nexcluded). Counted from the\nshots event in the demo file.">
+            <span class="aim-stat-val">${p.total_shots ?? '—'}</span><span class="aim-stat-lbl">Total Shots</span></div>
+          ${p.accuracy != null ? `<div class="aim-stat" data-tip="Total hits ÷ total shots × 100.\nOnly bullet weapons counted;\ngrenades are excluded.">
+            <span class="aim-stat-val" style="color:var(--ct)">${p.accuracy}%</span><span class="aim-stat-lbl">Accuracy</span></div>` : ''}
+        </div>
+      </div>`;
+
+    // Hit group bars
+    const hgRows = HG_ORDER
+      .filter(hg => p.hit_groups[hg])
+      .map(hg => {
+        const count = p.hit_groups[hg] || 0;
+        const pct   = th ? Math.round(100 * count / th) : 0;
+        const dmg   = p.dmg_groups[hg] || 0;
+        return `<div class="hg-row">
+          <span class="hg-label">${hg}</span>
+          <div class="hg-bar-bg"><div class="hg-bar-fill" style="width:${pct}%;background:${HG_COLORS[hg]||'#6b7280'}"></div></div>
+          <span class="hg-count">${count}</span>
+          <span class="hg-pct" style="color:${HG_COLORS[hg]||'#6b7280'}">${pct}%</span>
+        </div>`;
+      }).join('');
+
+    const hitGroups = `
+      <div class="aim-card">
+        <h4 data-tip="Where each bullet landed on\nthe enemy's body. Bar width =\n% of total hits on that zone.\nCount shows raw number of hits.">Hit Location Breakdown</h4>
+        ${hgRows || '<span style="color:var(--muted)">No data</span>'}
+      </div>`;
+
+    // Weapon table — build enriched rows, then render via sortable helper
+    currentWpnRows = p.weapons.map(w => ({
+      weapon:  w.weapon,
+      shots:   w.shots ?? null,
+      hits:    w.hits,
+      acc:     (w.shots && w.hits) ? Math.min(100, Math.round(100 * w.hits / w.shots)) : null,
+      dmg:     w.dmg,
+      avgDmg:  w.hits ? Math.round(w.dmg / w.hits) : 0,
+      kills:   w.kills,
+      hs_kills: w.hs_kills,
+    }));
+    wpnSortCol = 'kills';
+    wpnSortDir = -1;
+
+    document.getElementById('aim-detail').innerHTML  = summary + hitGroups;
+    document.getElementById('aim-weapons').innerHTML = `
+      <div class="aim-card" style="padding:0;overflow:hidden">
+        <h4 style="padding:14px 16px 10px">Per-Weapon Stats</h4>
+        <div class="table-wrap" style="border:none;border-radius:0;margin-bottom:0">
+          <table id="wpn-table">
+            <thead><tr>
+              <th class="sortable" data-col="weapon">Weapon</th>
+              <th class="sortable r" data-col="shots">Shots</th>
+              <th class="sortable r" data-col="hits">Hits</th>
+              <th class="sortable r" data-col="acc">Acc %</th>
+              <th class="sortable r" data-col="dmg">Dmg</th>
+              <th class="sortable r" data-col="avgDmg">Avg Dmg</th>
+              <th class="sortable r" data-col="kills">Kills</th>
+              <th class="sortable r" data-col="hs_kills">HS Kills</th>
+            </tr></thead>
+            <tbody id="wpn-tbody"></tbody>
+          </table>
+        </div>
+      </div>`;
+    document.querySelectorAll('#wpn-table th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.col;
+        if (wpnSortCol === col) wpnSortDir *= -1;
+        else { wpnSortCol = col; wpnSortDir = -1; }
+        renderWpnTable();
+      });
+    });
+    renderWpnTable();
+  }
+
+  // ── Map viewer ───────────────────────────────────────────────
+  const PLAYER_COLORS = [
+    '#ff6b6b','#ff9f1c','#6bcb77','#c77dff','#f72585',
+    '#e05c00','#2ec4b6','#ff4db8','#80b918','#adb5bd'
+  ];
+  const TRAIL_LEN = 12;
+
+  let mapSession    = null;
+  let mapName       = null;
+  let mapBounds     = null;
+  let mapImage      = null;
+  let mapFrames     = [];
+  let mapFrame      = 0;
+  let mapPlaying    = false;
+  let mapSpeed      = 1;
+  let mapTimer      = null;
+  let playerColorMap = {};
+  let playerIndexMap = {};
+  let hiddenPlayers  = new Set();
+
+  function checkMapsReady(onReady) {
+    fetch('/api/maps_ready')
+      .then(r => r.json())
+      .then(d => {
+        if (d.ready) { onReady(); }
+        else {
+          document.getElementById('map-no-data-icon').textContent = '⬇️';
+          document.getElementById('map-no-data-msg').textContent  = 'Map radar images not downloaded yet.';
+          document.getElementById('map-download-btn').style.display = '';
+          document.getElementById('map-no-data').style.display    = 'flex';
+        }
+      })
+      .catch(() => onReady());
+  }
+
+  function downloadMaps() {
+    const btn = document.getElementById('map-download-btn');
+    btn.disabled = true;
+    btn.textContent = 'Downloading…';
+    document.getElementById('map-no-data-icon').textContent = '⏳';
+    document.getElementById('map-no-data-msg').textContent  = 'Downloading map images, please wait…';
+    fetch('/api/download_maps', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) {
+          document.getElementById('map-no-data-msg').textContent = 'Download failed: ' + d.error;
+          btn.textContent = 'Retry'; btn.disabled = false;
+        } else {
+          btn.style.display = 'none';
+          document.getElementById('map-no-data-icon').textContent = '✅';
+          document.getElementById('map-no-data-msg').textContent  = 'Maps downloaded! Select a round to begin.';
+          if (mapName) {
+            const img = new Image();
+            img.onload  = () => { mapImage = img; mapRedraw(); };
+            img.onerror = () => { mapImage = null; };
+            img.src = `/api/map_image/${encodeURIComponent(mapName)}?t=${Date.now()}`;
+          }
+        }
+      })
+      .catch(() => {
+        document.getElementById('map-no-data-msg').textContent = 'Network error during download.';
+        btn.textContent = 'Retry'; btn.disabled = false;
+      });
+  }
+
+  function mapInit(data) {
+    mapSession = data.session_id;
+    mapName    = data.header.map;
+
+    document.getElementById('map-round-sel').innerHTML =
+      '<option value="">— select —</option>' +
+      data.rounds.map(r => `<option value="${r.round_num}">Round ${r.round_num} — ${r.reason}</option>`).join('');
+
+    playerColorMap = {};
+    playerIndexMap = {};
+    data.scoreboard.forEach((p, i) => { playerColorMap[p.name] = PLAYER_COLORS[i % PLAYER_COLORS.length]; });
+
+    document.getElementById('player-legend-body').innerHTML = data.scoreboard.map((p, i) => {
+      playerIndexMap[p.name] = i;
+      const color = playerColorMap[p.name];
+      const isCt  = p.team.toUpperCase().includes('CT');
+      return `<div class="legend-row" onclick="mapTogglePlayer('${esc(p.name)}')" id="leg-${i}">
+        <span class="legend-dot" style="background:${color}"></span>
+        <span class="legend-name" title="${esc(p.name)}">${esc(p.name)}</span>
+        <span class="legend-side">${isCt ? '🔵CT' : '🟡T'}</span>
+      </div>`;
+    }).join('');
+
+    fetch(`/api/map_info/${encodeURIComponent(mapName)}`)
+      .then(r => r.json()).then(b => { mapBounds = b; });
+
+    document.getElementById('map-download-btn').style.display = 'none';
+    checkMapsReady(() => {
+      const img = new Image();
+      img.onload  = () => { mapImage = img; mapRedraw(); };
+      img.onerror = () => { mapImage = null; };
+      img.src = `/api/map_image/${encodeURIComponent(mapName)}`;
+    });
+
+    document.getElementById('map-no-data-msg').textContent = data.has_ticks
+      ? 'Select a round to view player positions'
+      : 'Position data not available in this demo';
+  }
+
+  function mapTogglePlayer(name) {
+    if (hiddenPlayers.has(name)) hiddenPlayers.delete(name);
+    else hiddenPlayers.add(name);
+    const idx = playerIndexMap[name];
+    if (idx !== undefined) {
+      const el = document.getElementById('leg-' + idx);
+      if (el) el.style.opacity = hiddenPlayers.has(name) ? '0.3' : '1';
+    }
+    mapRedraw();
+  }
+
+  function mapLoadRound(roundNum) {
+    if (!roundNum || !mapSession) return;
+    mapStop();
+    mapFrames = []; mapFrame = 0;
+    document.getElementById('map-no-data').style.display = 'flex';
+    document.getElementById('map-no-data-msg').textContent = 'Loading…';
+
+    fetch(`/api/ticks/${mapSession}/${roundNum}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) { document.getElementById('map-no-data-msg').textContent = d.error; return; }
+        mapFrames = d.frames;
+        if (!mapFrames.length) { document.getElementById('map-no-data-msg').textContent = 'No position data for this round'; return; }
+        document.getElementById('map-no-data').style.display = 'none';
+        const scrubber = document.getElementById('map-scrubber');
+        scrubber.max = mapFrames.length - 1; scrubber.value = 0;
+        mapFrame = 0; mapRedraw();
+      });
+  }
+
+  function mapTogglePlay() { mapPlaying ? mapStop() : mapPlay(); }
+
+  function mapPlay() {
+    if (!mapFrames.length) return;
+    mapPlaying = true;
+    document.getElementById('map-play-btn').textContent = '⏸ Pause';
+    document.getElementById('map-play-btn').classList.add('active');
+    mapTimer = setInterval(() => {
+      mapFrame++;
+      if (mapFrame >= mapFrames.length) { mapStop(); mapFrame = mapFrames.length - 1; }
+      document.getElementById('map-scrubber').value = mapFrame;
+      mapRedraw();
+    }, Math.max(16, Math.round(100 / mapSpeed)));
+  }
+
+  function mapStop() {
+    mapPlaying = false; clearInterval(mapTimer);
+    document.getElementById('map-play-btn').textContent = '▶ Play';
+    document.getElementById('map-play-btn').classList.remove('active');
+  }
+
+  function mapSetSpeed(v) { mapSpeed = parseFloat(v); if (mapPlaying) { mapStop(); mapPlay(); } }
+  function mapScrub(v)    { mapFrame = parseInt(v); if (mapPlaying) mapStop(); mapRedraw(); }
+
+  function worldToCanvas(wx, wy, bounds, size) {
+    return {
+      x: ((wx - bounds.pos_x) / bounds.scale / 1024) * size,
+      y: ((bounds.pos_y - wy) / bounds.scale / 1024) * size,
+    };
+  }
+
+  function mapRedraw() {
+    const canvas = document.getElementById('map-canvas');
+    const size   = canvas.parentElement.clientWidth || 560;
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#0a0a10';
+    ctx.fillRect(0, 0, size, size);
+    if (mapImage) { ctx.globalAlpha = 0.55; ctx.drawImage(mapImage, 0, 0, size, size); ctx.globalAlpha = 1; }
+    if (!mapFrames.length || !mapBounds) return;
+
+    const frame = mapFrames[mapFrame];
+    if (!frame) return;
+
+    // Trails
+    const trails = {};
+    for (let fi = Math.max(0, mapFrame - TRAIL_LEN); fi <= mapFrame; fi++) {
+      const f = mapFrames[fi]; if (!f) continue;
+      f.p.forEach(pl => { if (!trails[pl.n]) trails[pl.n] = []; trails[pl.n].push({ ...pl, fi }); });
+    }
+    Object.entries(trails).forEach(([name, pts]) => {
+      if (hiddenPlayers.has(name)) return;
+      const color = playerColorMap[name] || '#fff';
+      for (let i = 1; i < pts.length; i++) {
+        if (!pts[i-1].alive || !pts[i].alive) continue;
+        const ca = worldToCanvas(pts[i-1].x, pts[i-1].y, mapBounds, size);
+        const cb = worldToCanvas(pts[i].x,   pts[i].y,   mapBounds, size);
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = 0.12 + 0.55 * (i / pts.length);
+        ctx.lineWidth   = 1.5;
+        ctx.moveTo(ca.x, ca.y); ctx.lineTo(cb.x, cb.y); ctx.stroke();
+      }
+    });
+    ctx.globalAlpha = 1;
+
+    // Players
+    frame.p.forEach(pl => {
+      if (hiddenPlayers.has(pl.n)) return;
+      const color = playerColorMap[pl.n] || '#fff';
+      const pos   = worldToCanvas(pl.x, pl.y, mapBounds, size);
+      const r     = 7;
+
+      if (!pl.alive) {
+        ctx.strokeStyle = color; ctx.globalAlpha = 0.35; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(pos.x-4, pos.y-4); ctx.lineTo(pos.x+4, pos.y+4); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(pos.x+4, pos.y-4); ctx.lineTo(pos.x-4, pos.y+4); ctx.stroke();
+        ctx.globalAlpha = 1; return;
+      }
+
+      // HP arc
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, r+2, -Math.PI/2, -Math.PI/2 + 2*Math.PI * Math.min(1, (pl.hp||0)/100));
+      ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.globalAlpha = 0.7; ctx.stroke();
+
+      // Dot
+      ctx.beginPath(); ctx.arc(pos.x, pos.y, r, 0, Math.PI*2);
+      ctx.fillStyle = color; ctx.globalAlpha = 0.9; ctx.fill();
+
+      // Side ring
+      ctx.beginPath(); ctx.arc(pos.x, pos.y, r, 0, Math.PI*2);
+      ctx.strokeStyle = (pl.side||'').toUpperCase().includes('CT') ? '#38bdf8' : '#fbbf24';
+      ctx.lineWidth = 1.5; ctx.globalAlpha = 1; ctx.stroke();
+
+      // Name
+      ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.9;
+      ctx.fillText(pl.n.split(' ')[0].substring(0, 8), pos.x, pos.y - r - 3);
+      ctx.globalAlpha = 1;
+    });
+
+    document.getElementById('map-tick-label').textContent =
+      `Frame ${mapFrame+1} / ${mapFrames.length}  •  Tick ${frame.t}`;
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────
+  function esc(str) {
+    return String(str)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  renderResults(demoData);
+</script>
+</body>
+</html>

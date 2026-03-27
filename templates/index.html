@@ -13,9 +13,8 @@
       --surface2: #1e1e2e;
       --border: #2a2a3d;
       --ct: #38bdf8;
-      --t: #fbbf24;
-      --green: #4ade80;
       --red: #f87171;
+      --green: #4ade80;
       --muted: #6b7280;
       --text: #e2e8f0;
       --radius: 10px;
@@ -27,9 +26,10 @@
       font-family: 'Segoe UI', system-ui, sans-serif;
       font-size: 14px;
       min-height: 100vh;
+      display: flex;
+      flex-direction: column;
     }
 
-    /* ── Header ── */
     .site-header {
       background: var(--surface);
       border-bottom: 1px solid var(--border);
@@ -38,17 +38,21 @@
       align-items: center;
       gap: 12px;
     }
-    .site-header h1 {
-      font-size: 1.15rem;
-      font-weight: 700;
-      letter-spacing: .04em;
-      color: #fff;
-    }
+    .site-header h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: .04em; color: #fff; }
     .site-header span { color: var(--ct); }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+    }
 
     /* ── Upload zone ── */
     #upload-zone {
-      margin: 48px auto;
+      width: 100%;
       max-width: 520px;
       border: 2px dashed var(--border);
       border-radius: var(--radius);
@@ -61,21 +65,21 @@
       border-color: var(--ct);
       background: rgba(56,189,248,.05);
     }
-    #upload-zone .icon { font-size: 2.8rem; margin-bottom: 12px; }
-    #upload-zone p { color: var(--muted); margin-top: 6px; font-size: .85rem; }
-    #upload-zone strong { color: var(--text); }
+    #upload-zone .icon { font-size: 3rem; margin-bottom: 14px; }
+    #upload-zone p { color: var(--muted); margin-top: 8px; font-size: .88rem; }
+    #upload-zone strong { color: var(--text); font-size: 1.05rem; }
     #file-input { display: none; }
 
     .btn {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      margin-top: 18px;
-      padding: 9px 22px;
+      margin-top: 20px;
+      padding: 10px 26px;
       background: var(--ct);
       color: #0d0d12;
       font-weight: 700;
-      font-size: .85rem;
+      font-size: .88rem;
       border: none;
       border-radius: 6px;
       cursor: pointer;
@@ -83,26 +87,77 @@
     }
     .btn:hover { opacity: .85; }
     .btn:disabled { opacity: .4; cursor: not-allowed; }
-
-    /* ── Progress ── */
-    #progress-wrap {
-      display: none;
-      max-width: 520px;
-      margin: 0 auto 32px;
-      text-align: center;
+    .btn-ghost {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
     }
-    #progress-wrap p { margin-bottom: 10px; color: var(--muted); }
-    .progress-bar-bg {
-      height: 6px;
+    .btn-ghost:hover { opacity: 1; border-color: var(--muted); color: var(--text); }
+
+    /* ── Queue ── */
+    #queue-wrap {
+      display: none;
+      width: 100%;
+      max-width: 520px;
+    }
+    #queue-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    #queue-header span {
+      font-size: .78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      font-weight: 700;
+    }
+    #queue-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    .qi {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 14px;
+      transition: border-color .2s;
+    }
+    .qi.uploading { border-color: var(--ct); }
+    .qi.done      { border-color: var(--green); }
+    .qi.error     { border-color: var(--red); }
+    .qi-icon  { font-size: 1rem; flex-shrink: 0; width: 20px; text-align: center; }
+    .qi-name  { flex: 1; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .qi-status {
+      font-size: .75rem;
+      white-space: nowrap;
+      color: var(--muted);
+    }
+    .qi.uploading .qi-status { color: var(--ct); }
+    .qi.done      .qi-status { color: var(--green); }
+    .qi.error     .qi-status { color: var(--red); }
+
+    .qi-progress {
+      width: 100%;
+      height: 3px;
       background: var(--border);
       border-radius: 99px;
       overflow: hidden;
+      margin-top: 5px;
+      display: none;
     }
-    .progress-bar-fill {
+    .qi.uploading .qi-progress { display: block; }
+    .qi-progress-fill {
       height: 100%;
       background: var(--ct);
       width: 0%;
-      transition: width .3s;
+      transition: width .2s;
       animation: indeterminate 1.4s infinite;
     }
     @keyframes indeterminate {
@@ -110,381 +165,73 @@
       100% { transform: translateX(200%) scaleX(.5); }
     }
 
-    /* ── Error banner ── */
+    #queue-summary {
+      text-align: center;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding-top: 4px;
+    }
+    #queue-summary p { color: var(--muted); font-size: .88rem; }
+
+    /* ── Single-file progress (1 file) ── */
+    #progress-wrap {
+      display: none;
+      width: 100%;
+      max-width: 520px;
+      text-align: center;
+    }
+    #progress-wrap p { margin-bottom: 12px; color: var(--muted); font-size: .9rem; }
+    .progress-bar-bg { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; }
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--ct);
+      width: 0%;
+      transition: width .3s;
+      animation: indeterminate 1.4s infinite;
+    }
+
+    /* ── Error ── */
     #error-banner {
       display: none;
-      max-width: 700px;
-      margin: 0 auto 24px;
+      width: 100%;
+      max-width: 520px;
+      margin-top: 16px;
       background: rgba(248,113,113,.1);
       border: 1px solid var(--red);
       color: var(--red);
       border-radius: var(--radius);
       padding: 12px 18px;
-    }
-
-    /* ── Results ── */
-    #results { display: none; max-width: 1100px; margin: 0 auto; padding: 0 20px 60px; }
-
-    /* Overview cards */
-    .match-header {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 24px 28px;
-      margin-bottom: 24px;
-    }
-    .match-score {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 28px;
-      margin-bottom: 20px;
-    }
-    .team-block { text-align: center; min-width: 160px; }
-    .team-name { font-size: 1rem; font-weight: 700; margin-bottom: 4px; }
-    .team-score { font-size: 3rem; font-weight: 800; line-height: 1; }
-    .score-sep { font-size: 2rem; color: var(--muted); font-weight: 300; }
-    .ct-color { color: var(--ct); }
-    .t-color  { color: var(--t); }
-
-    .meta-pills {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      justify-content: center;
-    }
-    .pill {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 5px 12px;
-      font-size: .78rem;
-      color: var(--muted);
-    }
-    .pill strong { color: var(--text); }
-
-    /* Tabs */
-    .tabs {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 16px;
-      border-bottom: 1px solid var(--border);
-    }
-    .tab-btn {
-      background: none;
-      border: none;
-      padding: 9px 18px;
-      color: var(--muted);
       font-size: .88rem;
-      font-weight: 600;
-      cursor: pointer;
-      border-bottom: 2px solid transparent;
-      margin-bottom: -1px;
-      transition: color .15s;
-    }
-    .tab-btn:hover { color: var(--text); }
-    .tab-btn.active { color: var(--ct); border-bottom-color: var(--ct); }
-
-    .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
-
-    /* Tables */
-    .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
-    table { width: 100%; border-collapse: collapse; }
-    thead th {
-      background: var(--surface2);
-      padding: 10px 14px;
-      text-align: left;
-      font-size: .75rem;
-      font-weight: 700;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-      color: var(--muted);
-      white-space: nowrap;
-    }
-    thead th.r { text-align: right; }
-    tbody tr { border-top: 1px solid var(--border); transition: background .1s; }
-    tbody tr:hover { background: var(--surface2); }
-    td { padding: 9px 14px; white-space: nowrap; }
-    td.r { text-align: right; }
-
-    .badge {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: .72rem;
-      font-weight: 700;
-    }
-    .badge-ct { background: rgba(56,189,248,.15); color: var(--ct); }
-    .badge-t  { background: rgba(251,191,36,.15);  color: var(--t);  }
-    .badge-hs { background: rgba(250,204,21,.15);  color: #facc15; }
-    .badge-note { background: var(--surface2); color: var(--muted); font-size: .68rem; }
-
-    .kd-good { color: var(--green); }
-    .kd-bad  { color: var(--red); }
-    .kd-even { color: var(--text); }
-
-    /* Kill feed search */
-    .kill-controls {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 14px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .kill-controls input, .kill-controls select {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 6px;
-      padding: 7px 12px;
-      font-size: .85rem;
-    }
-    .kill-controls input { flex: 1; min-width: 160px; }
-    .kill-controls input::placeholder { color: var(--muted); }
-    #kill-count { color: var(--muted); font-size: .82rem; margin-left: auto; }
-
-    /* Round table CT/T score highlight */
-    .ct-win td:first-child { border-left: 3px solid var(--ct); }
-    .t-win  td:first-child { border-left: 3px solid var(--t);  }
-
-    /* ── Round Timeline ── */
-    .timeline-half {
-      margin-bottom: 20px;
-    }
-    .timeline-half-label {
-      font-size: .72rem;
-      font-weight: 700;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 8px;
-    }
-    .timeline-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-    }
-    .round-block {
-      width: 48px;
-      height: 52px;
-      border-radius: 7px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 3px;
-      cursor: pointer;
-      border: 2px solid transparent;
-      transition: transform .12s, border-color .12s;
-      position: relative;
-    }
-    .round-block:hover { transform: translateY(-2px); }
-    .round-block.active { border-color: #fff; }
-    .round-block.ct { background: rgba(56,189,248,.18); }
-    .round-block.t  { background: rgba(251,191,36,.18); }
-    .round-block.ct.active { background: rgba(56,189,248,.35); }
-    .round-block.t.active  { background: rgba(251,191,36,.35); }
-    .round-block .rnum {
-      font-size: .72rem;
-      font-weight: 700;
-      color: var(--muted);
-    }
-    .round-block .ricon { font-size: 1rem; line-height: 1; }
-    .round-block .rscore {
-      font-size: .65rem;
-      font-weight: 700;
-    }
-    .round-block.ct .rscore { color: var(--ct); }
-    .round-block.t  .rscore { color: var(--t);  }
-
-    /* Tooltip on hover */
-    .round-block::after {
-      content: attr(data-tip);
-      position: absolute;
-      bottom: calc(100% + 6px);
-      left: 50%;
-      transform: translateX(-50%);
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-size: .72rem;
-      white-space: nowrap;
-      padding: 4px 8px;
-      border-radius: 5px;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity .15s;
-      z-index: 10;
-    }
-    .round-block:hover::after { opacity: 1; }
-
-    /* Round detail panel */
-    #round-detail {
-      margin-top: 18px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-    }
-    #round-detail-header {
-      padding: 10px 16px;
-      background: var(--surface2);
-      font-weight: 700;
-      font-size: .88rem;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .round-kill-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 7px 16px;
-      border-top: 1px solid var(--border);
-      font-size: .83rem;
-    }
-    .round-kill-row:hover { background: var(--surface2); }
-    .rk-attacker { font-weight: 600; min-width: 130px; }
-    .rk-arrow { color: var(--muted); font-size: .75rem; }
-    .rk-victim { color: var(--red); min-width: 130px; }
-    .rk-weapon { color: var(--green); min-width: 90px; font-size: .78rem; }
-    .rk-badges { display: flex; gap: 4px; }
-
-    /* ── Map Viewer ── */
-    #tab-map { display: none; }
-    #tab-map.active { display: grid; grid-template-columns: 1fr 200px; gap: 16px; }
-
-    .map-canvas-wrap {
-      position: relative;
-      background: #0a0a10;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-      aspect-ratio: 1;
-    }
-    #map-canvas {
-      width: 100%;
-      height: 100%;
-      display: block;
-    }
-    .map-no-data {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: var(--muted);
-      font-size: .85rem;
-      flex-direction: column;
-      gap: 8px;
     }
 
-    .map-sidebar {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+    /* ── Demo History ── */
+    #history-section { width: 100%; max-width: 520px; margin-top: 40px; }
+    #history-section h2 {
+      font-size: .8rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .08em; color: var(--muted); margin-bottom: 12px;
     }
-    .map-controls {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
+    #history-list { display: flex; flex-direction: column; gap: 8px; }
+    .demo-row {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 10px 14px;
+      cursor: pointer; transition: border-color .15s, background .15s;
     }
-    .map-controls label {
-      font-size: .75rem;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: .06em;
+    .demo-row:hover { border-color: var(--ct); background: var(--surface2); }
+    .demo-name {
+      flex: 1; font-weight: 600; font-size: .88rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .map-controls select {
-      width: 100%;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 6px;
-      padding: 6px 10px;
-      font-size: .83rem;
+    .demo-meta { font-size: .75rem; color: var(--muted); white-space: nowrap; }
+    .demo-del {
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; font-size: .9rem; padding: 2px 5px;
+      border-radius: 4px; transition: color .15s; line-height: 1;
     }
-    .map-playback {
-      display: flex;
-      gap: 6px;
-      align-items: center;
-    }
-    .map-btn {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 6px;
-      padding: 5px 10px;
-      cursor: pointer;
-      font-size: .85rem;
-      transition: background .12s;
-    }
-    .map-btn:hover { background: var(--border); }
-    .map-btn.active { background: var(--ct); color: #000; border-color: var(--ct); }
-    .map-scrubber {
-      width: 100%;
-      accent-color: var(--ct);
-    }
-    .map-tick-label {
-      font-size: .72rem;
-      color: var(--muted);
-      text-align: center;
-    }
-
-    .player-legend {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 10px 12px;
-      flex: 1;
-      overflow-y: auto;
-    }
-    .player-legend h4 {
-      font-size: .72rem;
-      text-transform: uppercase;
-      letter-spacing: .07em;
-      color: var(--muted);
-      margin-bottom: 8px;
-    }
-    .legend-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 4px 0;
-      font-size: .8rem;
-      border-radius: 4px;
-      cursor: pointer;
-      padding: 4px 6px;
-      transition: background .1s;
-    }
-    .legend-row:hover { background: var(--surface2); }
-    .legend-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-    .legend-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .legend-side { font-size: .7rem; color: var(--muted); }
-
-    /* Reset link */
-    #reset-btn {
-      display: none;
-      margin: 0 auto 20px;
-      background: none;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      padding: 7px 16px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: .82rem;
-    }
-    #reset-btn:hover { color: var(--text); border-color: var(--text); }
+    .demo-del:hover { color: var(--red); }
+    #history-empty { color: var(--muted); font-size: .85rem; display: none; }
   </style>
 </head>
 <body>
@@ -492,175 +239,47 @@
 <header class="site-header">
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--ct)"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
   <h1>CS2 <span>Demo Viewer</span></h1>
+  <a href="/admin" class="btn btn-ghost" style="margin-left:auto" title="Admin">SQL-Admin</a>
 </header>
 
-<main style="padding: 0 20px;">
-
-  <!-- Upload -->
+<main>
   <div id="upload-zone">
     <div class="icon">🎮</div>
-    <strong>Drop your .dem file here</strong>
-    <p>or click to browse</p>
-    <button class="btn" onclick="document.getElementById('file-input').click()">
-      Choose File
-    </button>
-    <input type="file" id="file-input" accept=".dem" />
+    <strong>Drop .dem files here</strong>
+    <p>Single file opens the viewer · Multiple files are queued and saved</p>
+    <button class="btn" onclick="document.getElementById('file-input').click()">Choose Files</button>
+    <input type="file" id="file-input" accept=".dem" multiple />
   </div>
 
-  <!-- Progress -->
+  <!-- Single-file progress -->
   <div id="progress-wrap">
     <p id="progress-label">Uploading…</p>
     <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-fill"></div></div>
   </div>
 
-  <!-- Error -->
-  <div id="error-banner"></div>
-
-  <!-- Reset -->
-  <div style="text-align:center;">
-    <button id="reset-btn" onclick="reset()">&#8592; Load another demo</button>
+  <!-- Multi-file queue -->
+  <div id="queue-wrap">
+    <div id="queue-header">
+      <span id="queue-title">Uploading 0 files</span>
+    </div>
+    <div id="queue-list"></div>
+    <div id="queue-summary">
+      <p id="queue-summary-text"></p>
+      <button class="btn btn-ghost" onclick="resetToUpload()">Upload More</button>
+    </div>
   </div>
 
-  <!-- Results -->
-  <div id="results">
+  <div id="error-banner"></div>
 
-    <!-- Match overview -->
-    <div class="match-header">
-      <div class="match-score">
-        <div class="team-block">
-          <div class="team-name ct-color" id="ct-name">CT</div>
-          <div class="team-score ct-color" id="ct-score">0</div>
-        </div>
-        <div class="score-sep">:</div>
-        <div class="team-block">
-          <div class="team-name t-color" id="t-name">T</div>
-          <div class="team-score t-color" id="t-score">0</div>
-        </div>
-      </div>
-      <div class="meta-pills" id="meta-pills"></div>
-    </div>
-
-    <!-- Tabs -->
-    <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('scoreboard', this)">Scoreboard</button>
-      <button class="tab-btn" onclick="switchTab('timeline', this)">Detail Timeline</button>
-      <button class="tab-btn" onclick="switchTab('map', this)">Visual timeline</button>
-      <button class="tab-btn" onclick="switchTab('rounds', this)">Rounds</button>
-      <button class="tab-btn" onclick="switchTab('killfeed', this)">Kill Feed</button>
-    </div>
-
-    <!-- Scoreboard tab -->
-    <div class="tab-panel active" id="tab-scoreboard">
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Player</th><th>Team</th>
-              <th class="r">K</th><th class="r">A</th><th class="r">D</th>
-              <th class="r">K/D</th><th class="r">HS%</th><th class="r">DMG</th>
-            </tr>
-          </thead>
-          <tbody id="scoreboard-body"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Timeline tab -->
-    <div class="tab-panel" id="tab-timeline">
-      <div id="timeline-halves"></div>
-      <div id="round-detail" style="display:none">
-        <div id="round-detail-header"></div>
-        <div id="round-detail-kills"></div>
-      </div>
-    </div>
-
-    <!-- Map tab -->
-    <div class="tab-panel" id="tab-map">
-      <div class="map-canvas-wrap">
-        <canvas id="map-canvas"></canvas>
-        <div class="map-no-data" id="map-no-data">
-          <span style="font-size:2rem" id="map-no-data-icon">🗺</span>
-          <span id="map-no-data-msg">Select a round to view player positions</span>
-          <button class="btn" id="map-download-btn" onclick="downloadMaps()" style="display:none;margin-top:8px;font-size:.8rem">
-            Download Map Images (~100 MB)
-          </button>
-        </div>
-      </div>
-      <div class="map-sidebar">
-        <div class="map-controls">
-          <label>Round</label>
-          <select id="map-round-sel" onchange="mapLoadRound(this.value)">
-            <option value="">— select —</option>
-          </select>
-          <label style="margin-top:4px">Playback</label>
-          <div class="map-playback">
-            <button class="map-btn" id="map-play-btn" onclick="mapTogglePlay()">▶ Play</button>
-            <select id="map-speed-sel" onchange="mapSetSpeed(this.value)" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:.8rem">
-              <option value="0.5">0.5×</option>
-              <option value="1" selected>1×</option>
-              <option value="2">2×</option>
-              <option value="4">4×</option>
-            </select>
-          </div>
-          <input type="range" class="map-scrubber" id="map-scrubber" min="0" value="0" oninput="mapScrub(this.value)" />
-          <div class="map-tick-label" id="map-tick-label">—</div>
-        </div>
-        <div class="player-legend">
-          <h4>Players</h4>
-          <div id="player-legend-body"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Rounds tab -->
-    <div class="tab-panel" id="tab-rounds">
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th><th>Winner</th><th>Reason</th>
-              <th class="r">CT Score</th><th class="r">T Score</th>
-            </tr>
-          </thead>
-          <tbody id="rounds-body"></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Kill Feed tab -->
-    <div class="tab-panel" id="tab-killfeed">
-      <div class="kill-controls">
-        <input type="text" id="kill-search" placeholder="Search player or weapon…" oninput="filterKills()" />
-        <select id="kill-round" onchange="filterKills()">
-          <option value="">All rounds</option>
-        </select>
-        <span id="kill-count"></span>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Tick</th><th>Rnd</th>
-              <th>Attacker</th><th></th><th>Victim</th>
-              <th>Weapon</th><th>Notes</th>
-            </tr>
-          </thead>
-          <tbody id="kills-body"></tbody>
-        </table>
-      </div>
-    </div>
-
-  </div><!-- /results -->
-
+  <section id="history-section">
+    <h2>Previous Demos</h2>
+    <p id="history-empty">No demos saved yet.</p>
+    <div id="history-list"></div>
+  </section>
 </main>
 
 <script>
-  let allKills = [];
-  let allRounds = [];
-  let selectedRound = null;
-
-  // ── Drag & drop ──────────────────────────────────────────────
-  const zone = document.getElementById('upload-zone');
+  const zone      = document.getElementById('upload-zone');
   const fileInput = document.getElementById('file-input');
 
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
@@ -668,632 +287,180 @@
   zone.addEventListener('drop', e => {
     e.preventDefault();
     zone.classList.remove('drag-over');
-    const file = e.dataTransfer.files[0];
-    if (file) uploadFile(file);
+    const files = [...e.dataTransfer.files].filter(f => f.name.toLowerCase().endsWith('.dem'));
+    if (files.length) handleFiles(files);
+    else showError('Only .dem files are supported.');
   });
-  zone.addEventListener('click', e => {
-    if (e.target.tagName !== 'BUTTON') fileInput.click();
-  });
+  zone.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') fileInput.click(); });
   fileInput.addEventListener('change', () => {
-    if (fileInput.files[0]) uploadFile(fileInput.files[0]);
+    const files = [...fileInput.files].filter(f => f.name.toLowerCase().endsWith('.dem'));
+    fileInput.value = '';
+    if (files.length) handleFiles(files);
+    else showError('Only .dem files are supported.');
   });
 
-  // ── Upload ───────────────────────────────────────────────────
-  function uploadFile(file) {
-    if (!file.name.toLowerCase().endsWith('.dem')) {
-      showError('Only .dem files are supported.');
-      return;
-    }
+  // ── Entry point ───────────────────────────────────────────────
+  function handleFiles(files) {
     hideError();
+    if (files.length === 1) {
+      uploadSingle(files[0]);
+    } else {
+      uploadQueue(files);
+    }
+  }
+
+  // ── Single file: existing flow → redirect to viewer ───────────
+  function uploadSingle(file) {
     zone.style.display = 'none';
-
-    const progressWrap = document.getElementById('progress-wrap');
+    const progressWrap  = document.getElementById('progress-wrap');
     const progressLabel = document.getElementById('progress-label');
+    const fill          = document.getElementById('progress-fill');
     progressWrap.style.display = 'block';
-    progressLabel.textContent = `Uploading ${file.name}…`;
+    progressLabel.textContent  = `Uploading ${file.name}…`;
+    fill.style.width = '0%';
 
-    const fd = new FormData();
+    const fd  = new FormData();
     fd.append('demo', file);
-
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/parse');
 
     xhr.upload.onprogress = e => {
       if (e.lengthComputable) {
         const pct = Math.round(e.loaded / e.total * 100);
-        const fill = document.getElementById('progress-fill');
         fill.style.animation = 'none';
         fill.style.width = pct + '%';
         progressLabel.textContent = `Uploading… ${pct}%`;
       }
     };
-
     xhr.onload = () => {
-      progressWrap.style.display = 'none';
       if (xhr.status === 200) {
+        progressLabel.textContent = 'Parsing complete — loading viewer…';
         const data = JSON.parse(xhr.responseText);
-        renderResults(data);
+        sessionStorage.setItem('demoData', JSON.stringify(data));
+        window.location.href = '/viewer';
       } else {
+        progressWrap.style.display = 'none';
+        zone.style.display = '';
         let msg = 'Server error';
         try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
         showError(msg);
-        zone.style.display = '';
       }
     };
-
     xhr.onerror = () => {
       progressWrap.style.display = 'none';
-      showError('Network error — is the server running?');
       zone.style.display = '';
+      showError('Network error — is the server running?');
     };
-
-    progressLabel.textContent = `Parsing ${file.name} (this may take a moment)…`;
+    progressLabel.textContent = `Parsing ${file.name} — this may take a moment…`;
     xhr.send(fd);
   }
 
-  // ── Render ───────────────────────────────────────────────────
-  function renderResults(d) {
-    // Score bar
-    document.getElementById('ct-name').textContent = d.ct_team;
-    document.getElementById('t-name').textContent  = d.t_team;
-    document.getElementById('ct-score').textContent = d.ct_wins;
-    document.getElementById('t-score').textContent  = d.t_wins;
+  // ── Multi-file queue ──────────────────────────────────────────
+  function uploadQueue(files) {
+    zone.style.display = 'none';
+    const queueWrap = document.getElementById('queue-wrap');
+    const queueList = document.getElementById('queue-list');
+    queueWrap.style.display = 'block';
+    document.getElementById('queue-summary').style.display = 'none';
+    document.getElementById('queue-title').textContent = `Uploading ${files.length} files`;
 
-    // Meta pills
-    const h = d.header;
-    const pills = [
-      ['File', d.filename],
-      ['Map', h.map],
-      ['Tickrate', h.tickrate + ' Hz'],
-      ['Duration', h.duration],
-      ['Rounds', d.total_rounds],
-    ];
-    document.getElementById('meta-pills').innerHTML =
-      pills.map(([k, v]) => `<div class="pill"><strong>${k}:</strong> ${v}</div>`).join('');
-
-    // Scoreboard
-    const sb = document.getElementById('scoreboard-body');
-    sb.innerHTML = d.scoreboard.map(p => {
-      const ct = p.team.toUpperCase().includes('CT');
-      const badgeClass = ct ? 'badge-ct' : 'badge-t';
-      const kdClass = p.kd >= 1.1 ? 'kd-good' : p.kd < 0.9 ? 'kd-bad' : 'kd-even';
-      return `<tr>
-        <td><strong>${esc(p.name)}</strong></td>
-        <td><span class="badge ${badgeClass}">${esc(p.team)}</span></td>
-        <td class="r">${p.kills}</td>
-        <td class="r">${p.assists}</td>
-        <td class="r">${p.deaths}</td>
-        <td class="r ${kdClass}">${p.kd.toFixed(2)}</td>
-        <td class="r">${p.hs_pct}%</td>
-        <td class="r">${p.dmg.toLocaleString()}</td>
-      </tr>`;
-    }).join('');
-
-    // Rounds
-    const rb = document.getElementById('rounds-body');
-    rb.innerHTML = d.rounds.map(r => {
-      const ct = r.winner_side.toUpperCase().includes('CT');
-      const winBadge = ct
-        ? `<span class="badge badge-ct">CT Win</span>`
-        : `<span class="badge badge-t">T Win</span>`;
-      const rowClass = ct ? 'ct-win' : 't-win';
-      return `<tr class="${rowClass}">
-        <td>${r.round_num}</td>
-        <td>${winBadge}</td>
-        <td>${esc(r.reason)}</td>
-        <td class="r ct-color">${r.ct_score}</td>
-        <td class="r t-color">${r.t_score}</td>
-      </tr>`;
-    }).join('');
-
-    // Timeline
-    allRounds = d.rounds;
-    try { mapInit(d); } catch(e) { console.error('mapInit failed:', e); }
-    renderTimeline(d.rounds, d.ct_team, d.t_team);
-
-    // Kill feed
-    allKills = d.kills;
-    const roundSel = document.getElementById('kill-round');
-    const uniqueRounds = [...new Set(d.kills.map(k => k.round_num))].sort((a,b) => a-b);
-    roundSel.innerHTML = '<option value="">All rounds</option>' +
-      uniqueRounds.map(r => `<option value="${r}">Round ${r}</option>`).join('');
-    filterKills();
-
-    // Show UI
-    document.getElementById('results').style.display = 'block';
-    document.getElementById('reset-btn').style.display = 'block';
-  }
-
-  function filterKills() {
-    const q = document.getElementById('kill-search').value.toLowerCase();
-    const rnd = document.getElementById('kill-round').value;
-    const filtered = allKills.filter(k => {
-      const matchText = !q ||
-        k.attacker.toLowerCase().includes(q) ||
-        k.victim.toLowerCase().includes(q) ||
-        k.weapon.toLowerCase().includes(q);
-      const matchRound = !rnd || String(k.round_num) === rnd;
-      return matchText && matchRound;
+    // Build queue items
+    queueList.innerHTML = '';
+    files.forEach((f, i) => {
+      const el = document.createElement('div');
+      el.className = 'qi';
+      el.id = `qi-${i}`;
+      el.innerHTML = `
+        <span class="qi-icon">⏳</span>
+        <div style="flex:1;min-width:0">
+          <div class="qi-name" title="${esc(f.name)}">${esc(f.name)}</div>
+          <div class="qi-progress"><div class="qi-progress-fill" id="qf-${i}"></div></div>
+        </div>
+        <span class="qi-status">Queued</span>`;
+      queueList.appendChild(el);
     });
 
-    document.getElementById('kill-count').textContent = `${filtered.length} kills`;
-
-    const kb = document.getElementById('kills-body');
-    kb.innerHTML = filtered.map(k => {
-      const notes = [
-        k.through_smoke ? '<span class="badge badge-note">smoke</span>' : '',
-        k.no_scope      ? '<span class="badge badge-note">no-scope</span>' : '',
-        k.penetrated    ? '<span class="badge badge-note">wall</span>' : '',
-      ].filter(Boolean).join(' ');
-      const hsTag = k.headshot ? '<span class="badge badge-hs">HS</span>' : '';
-      const attCt = k.attacker_team.toUpperCase().includes('CT');
-      const attClass = attCt ? 'ct-color' : 't-color';
-      return `<tr>
-        <td style="color:var(--muted)">${k.tick}</td>
-        <td style="color:var(--muted)">${k.round_num}</td>
-        <td class="${attClass}"><strong>${esc(k.attacker)}</strong></td>
-        <td>${hsTag}</td>
-        <td style="color:var(--red)">${esc(k.victim)}</td>
-        <td style="color:var(--green)">${esc(k.weapon)}</td>
-        <td>${notes}</td>
-      </tr>`;
-    }).join('');
+    // Upload sequentially
+    let done = 0, errors = 0;
+    (async () => {
+      for (let i = 0; i < files.length; i++) {
+        await uploadQueueItem(files[i], i);
+        const el = document.getElementById(`qi-${i}`);
+        if (el.classList.contains('done')) done++;
+        else errors++;
+        document.getElementById('queue-title').textContent =
+          `${i + 1} / ${files.length} processed`;
+      }
+      // All done
+      const summary = document.getElementById('queue-summary');
+      const text    = document.getElementById('queue-summary-text');
+      text.textContent = errors === 0
+        ? `All ${done} demo${done !== 1 ? 's' : ''} uploaded successfully.`
+        : `${done} succeeded, ${errors} failed.`;
+      summary.style.display = 'flex';
+      document.getElementById('queue-title').textContent = 'Upload complete';
+      loadHistory();
+    })();
   }
 
-  // ── Map viewer ───────────────────────────────────────────────
-  const PLAYER_COLORS = [
-    '#ff6b6b','#ffd93d','#6bcb77','#4d96ff','#c77dff',
-    '#ff9f1c','#2ec4b6','#f72585','#80b918','#adb5bd'
-  ];
-  const TRAIL_LEN = 12;
+  function uploadQueueItem(file, idx) {
+    return new Promise(resolve => {
+      const el     = document.getElementById(`qi-${idx}`);
+      const fill   = document.getElementById(`qf-${idx}`);
+      const status = el.querySelector('.qi-status');
+      const icon   = el.querySelector('.qi-icon');
 
-  let mapSession   = null;
-  let mapName      = null;
-  let mapBounds    = null;
-  let mapImage     = null;
-  let mapFrames    = [];
-  let mapFrame     = 0;
-  let mapPlaying   = false;
-  let mapSpeed     = 1;
-  let mapTimer     = null;
-  let playerColorMap = {};
-  let playerIndexMap = {};
-  let hiddenPlayers  = new Set();
+      el.classList.add('uploading');
+      icon.textContent   = '🔄';
+      status.textContent = 'Uploading…';
 
-  function checkMapsReady(onReady) {
-    fetch('/api/maps_ready')
-      .then(r => r.json())
-      .then(d => {
-        if (d.ready) { onReady(); }
-        else {
-          document.getElementById('map-no-data-icon').textContent = '⬇️';
-          document.getElementById('map-no-data-msg').textContent = 'Map radar images not downloaded yet.';
-          document.getElementById('map-download-btn').style.display = '';
-          document.getElementById('map-no-data').style.display = 'flex';
+      const fd  = new FormData();
+      fd.append('demo', file);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/parse');
+
+      xhr.upload.onprogress = e => {
+        if (e.lengthComputable) {
+          const pct = Math.round(e.loaded / e.total * 100);
+          fill.style.animation = 'none';
+          fill.style.width = pct + '%';
+          status.textContent = `Uploading ${pct}%`;
         }
-      })
-      .catch(() => onReady()); // if endpoint fails, try anyway
-  }
-
-  function downloadMaps() {
-    const btn = document.getElementById('map-download-btn');
-    btn.disabled = true;
-    btn.textContent = 'Downloading…';
-    document.getElementById('map-no-data-icon').textContent = '⏳';
-    document.getElementById('map-no-data-msg').textContent = 'Downloading map images, please wait…';
-
-    fetch('/api/download_maps', { method: 'POST' })
-      .then(r => r.json())
-      .then(d => {
-        if (d.error) {
-          document.getElementById('map-no-data-msg').textContent = 'Download failed: ' + d.error;
-          btn.textContent = 'Retry'; btn.disabled = false;
+      };
+      xhr.onload = () => {
+        el.classList.remove('uploading');
+        if (xhr.status === 200) {
+          el.classList.add('done');
+          icon.textContent   = '✅';
+          status.textContent = 'Done';
         } else {
-          btn.style.display = 'none';
-          document.getElementById('map-no-data-icon').textContent = '✅';
-          document.getElementById('map-no-data-msg').textContent = 'Maps downloaded! Select a round to begin.';
-          // Re-fetch map image now that maps are available
-          if (mapName && mapSession) {
-            const img = new Image();
-            img.onload  = () => { mapImage = img; mapRedraw(); };
-            img.onerror = () => { mapImage = null; };
-            img.src = `/api/map_image/${encodeURIComponent(mapName)}?t=${Date.now()}`;
-          }
+          el.classList.add('error');
+          icon.textContent = '❌';
+          let msg = 'Error';
+          try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
+          status.textContent = msg;
         }
-      })
-      .catch(e => {
-        document.getElementById('map-no-data-msg').textContent = 'Network error during download.';
-        btn.textContent = 'Retry'; btn.disabled = false;
-      });
-  }
-
-  function mapInit(data) {
-    mapSession = data.session_id;
-    mapName    = data.header.map;
-
-    // Populate round selector
-    const sel = document.getElementById('map-round-sel');
-    sel.innerHTML = '<option value="">— select —</option>' +
-      data.rounds.map(r => `<option value="${r.round_num}">Round ${r.round_num} — ${r.reason}</option>`).join('');
-
-    // Assign player colors
-    playerColorMap = {};
-    data.scoreboard.forEach((p, i) => {
-      playerColorMap[p.name] = PLAYER_COLORS[i % PLAYER_COLORS.length];
-    });
-
-    // Legend — use numeric index as DOM id to avoid btoa issues with non-ASCII names
-    playerIndexMap = {};
-    const legend = document.getElementById('player-legend-body');
-    legend.innerHTML = data.scoreboard.map((p, i) => {
-      playerIndexMap[p.name] = i;
-      const color = playerColorMap[p.name];
-      const isCt  = p.team.toUpperCase().includes('CT');
-      const side  = `<span class="legend-side">${isCt ? '🔵CT' : '🟡T'}</span>`;
-      return `<div class="legend-row" onclick="mapTogglePlayer('${esc(p.name)}')" id="leg-${i}">
-        <span class="legend-dot" style="background:${color}"></span>
-        <span class="legend-name" title="${esc(p.name)}">${esc(p.name)}</span>
-        ${side}
-      </div>`;
-    }).join('');
-
-    // Load map bounds
-    fetch(`/api/map_info/${encodeURIComponent(mapName)}`)
-      .then(r => r.json())
-      .then(b => { mapBounds = b; });
-
-    // Load map radar image — check maps are downloaded first
-    document.getElementById('map-download-btn').style.display = 'none';
-    checkMapsReady(() => {
-      const img = new Image();
-      img.onload  = () => { mapImage = img; mapRedraw(); };
-      img.onerror = () => { mapImage = null; };
-      img.src = `/api/map_image/${encodeURIComponent(mapName)}`;
-    });
-
-    document.getElementById('map-no-data-msg').textContent = 'Select a round to view player positions';
-    if (!data.has_ticks) {
-      document.getElementById('map-no-data-msg').textContent = 'Position data not available in this demo';
-    }
-  }
-
-  function mapTogglePlayer(name) {
-    if (hiddenPlayers.has(name)) hiddenPlayers.delete(name);
-    else hiddenPlayers.add(name);
-    const idx = playerIndexMap[name];
-    if (idx !== undefined) {
-      const el = document.getElementById('leg-' + idx);
-      if (el) el.style.opacity = hiddenPlayers.has(name) ? '0.3' : '1';
-    }
-    mapRedraw();
-  }
-
-  function mapLoadRound(roundNum) {
-    if (!roundNum || !mapSession) return;
-    mapStop();
-    mapFrames = [];
-    mapFrame  = 0;
-    document.getElementById('map-no-data').style.display = 'flex';
-    document.getElementById('map-no-data-msg').textContent = 'Loading…';
-
-    fetch(`/api/ticks/${mapSession}/${roundNum}`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.error) {
-          document.getElementById('map-no-data-msg').textContent = d.error;
-          return;
-        }
-        mapFrames = d.frames;
-        if (!mapFrames.length) {
-          document.getElementById('map-no-data-msg').textContent = 'No position data for this round';
-          return;
-        }
-        document.getElementById('map-no-data').style.display = 'none';
-        const scrubber = document.getElementById('map-scrubber');
-        scrubber.max   = mapFrames.length - 1;
-        scrubber.value = 0;
-        mapFrame = 0;
-        mapRedraw();
-      });
-  }
-
-  function mapTogglePlay() {
-    if (mapPlaying) mapStop();
-    else            mapPlay();
-  }
-
-  function mapPlay() {
-    if (!mapFrames.length) return;
-    mapPlaying = true;
-    document.getElementById('map-play-btn').textContent = '⏸ Pause';
-    document.getElementById('map-play-btn').classList.add('active');
-    const interval = Math.max(16, Math.round(100 / mapSpeed));
-    mapTimer = setInterval(() => {
-      mapFrame++;
-      if (mapFrame >= mapFrames.length) { mapStop(); mapFrame = mapFrames.length - 1; }
-      document.getElementById('map-scrubber').value = mapFrame;
-      mapRedraw();
-    }, interval);
-  }
-
-  function mapStop() {
-    mapPlaying = false;
-    clearInterval(mapTimer);
-    document.getElementById('map-play-btn').textContent = '▶ Play';
-    document.getElementById('map-play-btn').classList.remove('active');
-  }
-
-  function mapSetSpeed(v) { mapSpeed = parseFloat(v); if (mapPlaying) { mapStop(); mapPlay(); } }
-
-  function mapScrub(v) {
-    mapFrame = parseInt(v);
-    if (mapPlaying) mapStop();
-    mapRedraw();
-  }
-
-  function worldToCanvas(wx, wy, bounds, size) {
-    const px = (wx - bounds.pos_x) / bounds.scale;
-    const py = (bounds.pos_y - wy) / bounds.scale;
-    return { x: (px / 1024) * size, y: (py / 1024) * size };
-  }
-
-  function mapRedraw() {
-    const canvas = document.getElementById('map-canvas');
-    const wrap   = canvas.parentElement;
-    const size   = wrap.clientWidth || 560;
-    canvas.width  = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-
-    // Background / map image
-    ctx.fillStyle = '#0a0a10';
-    ctx.fillRect(0, 0, size, size);
-    if (mapImage) {
-      ctx.globalAlpha = 0.55;
-      ctx.drawImage(mapImage, 0, 0, size, size);
-      ctx.globalAlpha = 1.0;
-    }
-
-    if (!mapFrames.length || !mapBounds) return;
-
-    const frame = mapFrames[mapFrame];
-    if (!frame) return;
-
-    // Build trail (last TRAIL_LEN frames per player)
-    const trails = {};
-    const start  = Math.max(0, mapFrame - TRAIL_LEN);
-    for (let fi = start; fi <= mapFrame; fi++) {
-      const f = mapFrames[fi];
-      if (!f) continue;
-      f.p.forEach(pl => {
-        if (!trails[pl.n]) trails[pl.n] = [];
-        trails[pl.n].push({ x: pl.x, y: pl.y, alive: pl.alive, fi });
-      });
-    }
-
-    // Draw trails
-    Object.entries(trails).forEach(([name, pts]) => {
-      if (hiddenPlayers.has(name)) return;
-      const color = playerColorMap[name] || '#fff';
-      for (let i = 1; i < pts.length; i++) {
-        const a = pts[i - 1];
-        const b = pts[i];
-        if (!a.alive || !b.alive) continue;
-        const ca = worldToCanvas(a.x, a.y, mapBounds, size);
-        const cb = worldToCanvas(b.x, b.y, mapBounds, size);
-        const alpha = 0.12 + 0.55 * ((i) / pts.length);
-        ctx.beginPath();
-        ctx.strokeStyle = color;
-        ctx.globalAlpha = alpha;
-        ctx.lineWidth   = 1.5;
-        ctx.moveTo(ca.x, ca.y);
-        ctx.lineTo(cb.x, cb.y);
-        ctx.stroke();
-      }
-    });
-    ctx.globalAlpha = 1.0;
-
-    // Draw players
-    frame.p.forEach(pl => {
-      if (hiddenPlayers.has(pl.n)) return;
-      const color = playerColorMap[pl.n] || '#fff';
-      const pos   = worldToCanvas(pl.x, pl.y, mapBounds, size);
-      const r     = 7;
-
-      if (!pl.alive) {
-        // Dead: draw X
-        ctx.strokeStyle = color;
-        ctx.globalAlpha = 0.35;
-        ctx.lineWidth   = 2;
-        ctx.beginPath(); ctx.moveTo(pos.x - 4, pos.y - 4); ctx.lineTo(pos.x + 4, pos.y + 4); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(pos.x + 4, pos.y - 4); ctx.lineTo(pos.x - 4, pos.y + 4); ctx.stroke();
-        ctx.globalAlpha = 1.0;
-        return;
-      }
-
-      // HP ring
-      const hpFrac = Math.min(1, (pl.hp || 0) / 100);
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, r + 2, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * hpFrac);
-      ctx.strokeStyle = color;
-      ctx.lineWidth   = 2.5;
-      ctx.globalAlpha = 0.7;
-      ctx.stroke();
-      ctx.globalAlpha = 1.0;
-
-      // Fill dot
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 0.9;
-      ctx.fill();
-      ctx.globalAlpha = 1.0;
-
-      // Side indicator ring
-      const isCt = (pl.side || '').toUpperCase().includes('CT');
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-      ctx.strokeStyle = isCt ? '#38bdf8' : '#fbbf24';
-      ctx.lineWidth   = 1.5;
-      ctx.stroke();
-
-      // Name label
-      ctx.font      = `bold 9px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#fff';
-      ctx.globalAlpha = 0.9;
-      ctx.fillText(pl.n.split(' ')[0].substring(0, 8), pos.x, pos.y - r - 3);
-      ctx.globalAlpha = 1.0;
-    });
-
-    // Tick label
-    document.getElementById('map-tick-label').textContent =
-      `Frame ${mapFrame + 1} / ${mapFrames.length}  •  Tick ${frame.t}`;
-  }
-
-  // ── Timeline ─────────────────────────────────────────────────
-  const REASON_ICON = {
-    'Ct Win':            '🛡',
-    'T Win':             '💣',
-    'Bomb Defused':      '🔵',
-    'Bomb Exploded':     '💥',
-    'Terrorists Win':    '💣',
-    'Counter Terrorists Win': '🛡',
-    'Target Saved':      '⏱',
-    'Target Bombed':     '💥',
-  };
-
-  function reasonIcon(reason) {
-    for (const [k, v] of Object.entries(REASON_ICON)) {
-      if (reason.toLowerCase().includes(k.toLowerCase())) return v;
-    }
-    return '🎯';
-  }
-
-  function renderTimeline(rounds, ctTeam, tTeam) {
-    const container = document.getElementById('timeline-halves');
-    container.innerHTML = '';
-
-    // Group into halves: 1-12, 13-24, 25+ (OT)
-    const halves = [];
-    rounds.forEach(r => {
-      let halfIdx;
-      if (r.round_num <= 12)      halfIdx = 0;
-      else if (r.round_num <= 24) halfIdx = 1;
-      else                         halfIdx = 2 + Math.floor((r.round_num - 25) / 6);
-      if (!halves[halfIdx]) halves[halfIdx] = [];
-      halves[halfIdx].push(r);
-    });
-
-    const halfLabels = ['1st Half', '2nd Half'];
-
-    halves.forEach((group, idx) => {
-      if (!group) return;
-      const label = halfLabels[idx] || `Overtime ${idx - 1}`;
-
-      // Count CT/T wins in this half
-      const ctW = group.filter(r => r.winner_side === 'CT').length;
-      const tW  = group.filter(r => r.winner_side === 'T').length;
-
-      const halfDiv = document.createElement('div');
-      halfDiv.className = 'timeline-half';
-      halfDiv.innerHTML = `<div class="timeline-half-label">${label} &nbsp;
-        <span style="color:var(--ct)">${ctTeam} ${ctW}</span>
-        <span style="color:var(--muted)"> – </span>
-        <span style="color:var(--t)">${tW} ${tTeam}</span>
-      </div>`;
-
-      const row = document.createElement('div');
-      row.className = 'timeline-row';
-
-      group.forEach(r => {
-        const isCt = r.winner_side === 'CT';
-        const block = document.createElement('div');
-        block.className = `round-block ${isCt ? 'ct' : 't'}`;
-        block.dataset.round = r.round_num;
-        block.dataset.tip = `${r.reason}`;
-        block.innerHTML = `
-          <span class="rnum">${r.round_num}</span>
-          <span class="ricon">${reasonIcon(r.reason)}</span>
-          <span class="rscore">${r.ct_score}:${r.t_score}</span>`;
-        block.addEventListener('click', () => selectRound(r.round_num, block));
-        row.appendChild(block);
-      });
-
-      halfDiv.appendChild(row);
-      container.appendChild(halfDiv);
+        resolve();
+      };
+      xhr.onerror = () => {
+        el.classList.remove('uploading');
+        el.classList.add('error');
+        icon.textContent   = '❌';
+        status.textContent = 'Network error';
+        resolve();
+      };
+      status.textContent = `Parsing…`;
+      xhr.send(fd);
     });
   }
 
-  function selectRound(roundNum, blockEl) {
-    // Toggle off if same round clicked again
-    if (selectedRound === roundNum) {
-      selectedRound = null;
-      document.querySelectorAll('.round-block').forEach(b => b.classList.remove('active'));
-      document.getElementById('round-detail').style.display = 'none';
-      return;
-    }
-
-    selectedRound = roundNum;
-    document.querySelectorAll('.round-block').forEach(b => b.classList.remove('active'));
-    blockEl.classList.add('active');
-
-    const round = allRounds.find(r => r.round_num === roundNum);
-    const kills = allKills.filter(k => k.round_num === roundNum);
-
-    const detail = document.getElementById('round-detail');
-    const header = document.getElementById('round-detail-header');
-    const killsDiv = document.getElementById('round-detail-kills');
-
-    const isCt = round.winner_side === 'CT';
-    const winColor = isCt ? 'var(--ct)' : 'var(--t)';
-    header.innerHTML = `
-      <span style="color:${winColor};font-size:1.1rem">${reasonIcon(round.reason)}</span>
-      <span>Round ${round.round_num}</span>
-      <span class="badge ${isCt ? 'badge-ct' : 'badge-t'}">${round.winner_side} Win</span>
-      <span style="color:var(--muted);font-weight:400">${esc(round.reason)}</span>
-      <span style="margin-left:auto;color:var(--muted);font-weight:400;font-size:.8rem">${kills.length} kills</span>`;
-
-    if (kills.length === 0) {
-      killsDiv.innerHTML = `<div class="round-kill-row" style="color:var(--muted)">No kill data for this round.</div>`;
-    } else {
-      killsDiv.innerHTML = kills.map(k => {
-        const attCt = k.attacker_team && !k.attacker_team.toUpperCase().includes('T') || k.attacker_team === '';
-        // Use attacker_side via team name: check if victim_team !== attacker_team
-        const attColor = (k.attacker_team === k.victim_team) ? 'var(--text)' :
-                         k.attacker_team ? 'var(--ct)' : 'var(--text)';
-        // Simpler: colour by whether attacker_team matches ct or t pattern
-        const aCt = k.attacker_team && !['t','terrorist'].some(x => k.attacker_team.toLowerCase() === x);
-        const badges = [
-          k.headshot      ? '<span class="badge badge-hs">HS</span>'         : '',
-          k.through_smoke ? '<span class="badge badge-note">smoke</span>'     : '',
-          k.no_scope      ? '<span class="badge badge-note">no-scope</span>'  : '',
-          k.penetrated    ? '<span class="badge badge-note">wall</span>'      : '',
-        ].filter(Boolean).join('');
-        return `<div class="round-kill-row">
-          <span class="rk-attacker ct-color">${esc(k.attacker)}</span>
-          <span class="rk-arrow">›</span>
-          <span class="rk-weapon">${esc(k.weapon)}</span>
-          <span class="rk-arrow">›</span>
-          <span class="rk-victim">${esc(k.victim)}</span>
-          <span class="rk-badges">${badges}</span>
-        </div>`;
-      }).join('');
-    }
-
-    detail.style.display = 'block';
-    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  function resetToUpload() {
+    document.getElementById('queue-wrap').style.display = 'none';
+    zone.style.display = '';
+    hideError();
   }
 
-  // ── Tabs ─────────────────────────────────────────────────────
-  function switchTab(name, btn) {
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById('tab-' + name).classList.add('active');
-    btn.classList.add('active');
-  }
-
-  // ── Helpers ──────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────
   function showError(msg) {
     const el = document.getElementById('error-banner');
     el.textContent = '⚠ ' + msg;
@@ -1302,26 +469,80 @@
   function hideError() {
     document.getElementById('error-banner').style.display = 'none';
   }
-  function reset() {
-    mapStop(); mapFrames = []; mapFrame = 0; mapSession = null;
-    document.getElementById('map-no-data').style.display = 'flex';
-    document.getElementById('map-no-data-msg').textContent = 'Select a round to view player positions';
-    document.getElementById('map-round-sel').innerHTML = '<option value="">— select —</option>';
-    document.getElementById('map-tick-label').textContent = '—';
-    document.getElementById('player-legend-body').innerHTML = '';
-    document.getElementById('results').style.display = 'none';
-    document.getElementById('reset-btn').style.display = 'none';
-    document.getElementById('upload-zone').style.display = '';
-    document.getElementById('file-input').value = '';
-    document.getElementById('round-detail').style.display = 'none';
-    allRounds = []; allKills = []; selectedRound = null;
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Demo History ──────────────────────────────────────────────
+  const historyList  = document.getElementById('history-list');
+  const historyEmpty = document.getElementById('history-empty');
+
+  function loadHistory() {
+    fetch('/api/demos')
+      .then(r => r.json())
+      .then(demos => {
+        historyList.innerHTML = '';
+        if (!demos.length) { historyEmpty.style.display = 'block'; return; }
+        historyEmpty.style.display = 'none';
+        demos.forEach(d => {
+          const ts      = new Date(d.uploaded_at);
+          const dateStr = isNaN(ts) ? d.uploaded_at
+            : ts.toLocaleString(undefined, {
+                day: '2-digit', month: 'short', year: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+              });
+          const row = document.createElement('div');
+          row.className = 'demo-row';
+          row.innerHTML = `
+            <div class="demo-name" title="${esc(d.filename)}">${esc(d.filename)}</div>
+            <div class="demo-meta">${esc(d.map)} &nbsp;·&nbsp; ${dateStr}</div>
+            <button class="demo-del" title="Delete" data-id="${d.id}">✕</button>`;
+          row.addEventListener('click', e => {
+            if (e.target.classList.contains('demo-del')) return;
+            loadDemo(d.id, d.filename);
+          });
+          row.querySelector('.demo-del').addEventListener('click', e => {
+            e.stopPropagation();
+            deleteDemo(d.id, row);
+          });
+          historyList.appendChild(row);
+        });
+      })
+      .catch(() => {});
+  }
+
+  function loadDemo(id, filename) {
     hideError();
+    zone.style.display = 'none';
+    const progressWrap  = document.getElementById('progress-wrap');
+    const progressLabel = document.getElementById('progress-label');
+    progressWrap.style.display = 'block';
+    progressLabel.textContent  = `Loading ${filename}…`;
+    fetch(`/api/demos/${id}`)
+      .then(r => { if (!r.ok) throw new Error('Demo not found'); return r.json(); })
+      .then(data => {
+        sessionStorage.setItem('demoData', JSON.stringify(data));
+        window.location.href = '/viewer';
+      })
+      .catch(err => {
+        progressWrap.style.display = 'none';
+        zone.style.display = '';
+        showError(err.message || 'Failed to load demo');
+      });
   }
-  function esc(str) {
-    return String(str)
-      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-      .replace(/"/g,'&quot;');
+
+  function deleteDemo(id, rowEl) {
+    fetch(`/api/demos/${id}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(() => {
+        rowEl.remove();
+        if (!historyList.children.length) historyEmpty.style.display = 'block';
+      })
+      .catch(() => showError('Failed to delete demo'));
   }
+
+  loadHistory();
 </script>
 </body>
 </html>

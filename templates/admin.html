@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CS2 Demo Viewer — Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0d12;
+      --surface: #16161f;
+      --surface2: #1e1e2e;
+      --border: #2a2a3d;
+      --ct: #38bdf8;
+      --red: #f87171;
+      --green: #4ade80;
+      --yellow: #fbbf24;
+      --muted: #6b7280;
+      --text: #e2e8f0;
+      --radius: 10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .site-header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .site-header h1 { font-size: 1.1rem; font-weight: 700; color: #fff; }
+    .site-header h1 span { color: var(--ct); }
+    .site-header a {
+      margin-left: auto;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: .85rem;
+      border: 1px solid var(--border);
+      padding: 5px 12px;
+      border-radius: 6px;
+      transition: color .15s, border-color .15s;
+    }
+    .site-header a:hover { color: var(--text); border-color: var(--muted); }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 0;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* ── Schema sidebar ── */
+    .schema-panel {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 16px;
+    }
+    .schema-panel h3 {
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .schema-table { margin-bottom: 16px; }
+    .schema-table-name {
+      font-weight: 700;
+      font-size: .85rem;
+      color: var(--ct);
+      margin-bottom: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .schema-table-name:hover { opacity: .8; }
+    .schema-col {
+      display: flex;
+      gap: 8px;
+      font-size: .75rem;
+      padding: 3px 0 3px 14px;
+      border-left: 2px solid var(--border);
+      margin-bottom: 2px;
+      align-items: center;
+    }
+    .col-name { color: var(--text); flex: 1; }
+    .col-type { color: var(--muted); font-size: .7rem; }
+    .col-pk   { color: var(--yellow); font-size: .65rem; font-weight: 700; }
+
+    /* ── Quick queries ── */
+    .quick-panel {
+      margin-top: 20px;
+    }
+    .quick-btn {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: .75rem;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-bottom: 5px;
+      transition: background .12s, color .12s, border-color .12s;
+    }
+    .quick-btn:hover { background: var(--surface2); color: var(--text); border-color: var(--muted); }
+
+    /* ── Main editor area ── */
+    .editor-panel {
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      gap: 14px;
+      overflow: hidden;
+    }
+
+    .editor-toolbar {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .editor-toolbar label {
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--muted);
+    }
+
+    #sql-editor {
+      width: 100%;
+      min-height: 140px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: 'Consolas', 'Cascadia Code', monospace;
+      font-size: 13px;
+      padding: 12px 14px;
+      resize: vertical;
+      outline: none;
+      transition: border-color .15s;
+      tab-size: 2;
+    }
+    #sql-editor:focus { border-color: var(--ct); }
+
+    .run-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-run {
+      padding: 8px 22px;
+      background: var(--ct);
+      color: #0d0d12;
+      font-weight: 700;
+      font-size: .85rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    .btn-run:hover { opacity: .85; }
+    .btn-run:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-clear {
+      padding: 8px 16px;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: .85rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: color .15s, border-color .15s;
+    }
+    .btn-clear:hover { color: var(--text); border-color: var(--muted); }
+
+    #status-bar {
+      font-size: .78rem;
+      color: var(--muted);
+      margin-left: 4px;
+    }
+    #status-bar.ok  { color: var(--green); }
+    #status-bar.err { color: var(--red); }
+
+    /* ── Results ── */
+    .results-wrap {
+      flex: 1;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    #results-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .82rem;
+    }
+    #results-table th {
+      background: var(--surface2);
+      color: var(--ct);
+      font-weight: 600;
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    #results-table td {
+      padding: 6px 12px;
+      border-bottom: 1px solid var(--border);
+      max-width: 400px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+      font-family: 'Consolas', monospace;
+      font-size: .8rem;
+    }
+    #results-table td.null { color: var(--muted); font-style: italic; }
+    #results-table tr:hover td { background: var(--surface2); }
+    #results-table tr:last-child td { border-bottom: none; }
+
+    .results-empty {
+      padding: 40px;
+      text-align: center;
+      color: var(--muted);
+      font-size: .88rem;
+    }
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--ct)"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/></svg>
+  <h1>CS2 Demo Viewer &mdash; <span>Admin</span></h1>
+  <a href="/">&#8592; Back to app</a>
+</header>
+
+<div class="layout">
+
+  <!-- Schema sidebar -->
+  <aside class="schema-panel">
+    <h3>Schema</h3>
+    <div id="schema-body"><span style="color:var(--muted);font-size:.8rem">Loading…</span></div>
+
+    <div class="quick-panel">
+      <h3 style="margin-bottom:10px">Quick Queries</h3>
+      <button class="quick-btn" onclick="setQuery('SELECT id, filename, map, uploaded_at FROM demos ORDER BY uploaded_at DESC;')">List demos</button>
+      <button class="quick-btn" onclick="setQuery('SELECT COUNT(*) AS total_demos FROM demos;')">Count demos</button>
+      <button class="quick-btn" onclick="setQuery('SELECT map, COUNT(*) AS count\nFROM demos GROUP BY map ORDER BY count DESC;')">Demos by map</button>
+      <button class="quick-btn" onclick="setQuery('SELECT name FROM sqlite_master WHERE type=\'table\';')">List tables</button>
+      <button class="quick-btn" onclick="setQuery('PRAGMA integrity_check;')">Integrity check</button>
+      <button class="quick-btn" onclick="setQuery('VACUUM;')">VACUUM</button>
+
+      <h3 style="margin-top:18px;margin-bottom:10px">Kills &amp; Rounds</h3>
+      <button class="quick-btn" onclick="setQuery('SELECT attacker, COUNT(*) AS kills\nFROM demo_kills\nGROUP BY attacker\nORDER BY kills DESC\nLIMIT 20;')">Top fraggers (all demos)</button>
+      <button class="quick-btn" onclick="setQuery('SELECT weapon, COUNT(*) AS kills,\n  SUM(headshot) AS headshots\nFROM demo_kills\nGROUP BY weapon\nORDER BY kills DESC;')">Kills by weapon</button>
+      <button class="quick-btn" onclick="setQuery('SELECT demo_id, COUNT(*) AS kills\nFROM demo_kills\nGROUP BY demo_id\nORDER BY kills DESC;')">Kill count per demo</button>
+      <button class="quick-btn" onclick="setQuery('SELECT winner_side, COUNT(*) AS rounds\nFROM demo_rounds\nGROUP BY winner_side;')">Rounds won by side</button>
+      <button class="quick-btn" onclick="setQuery('SELECT reason, COUNT(*) AS count\nFROM demo_rounds\nGROUP BY reason\nORDER BY count DESC;')">Round end reasons</button>
+
+      <h3 style="margin-top:18px;margin-bottom:10px">Aim &amp; Performance</h3>
+      <button class="quick-btn" onclick="setQuery('SELECT player_name, AVG(accuracy) AS avg_acc,\n  AVG(hs_hit_pct) AS avg_hs_pct,\n  AVG(kast) AS avg_kast\nFROM demo_aim\nGROUP BY player_name\nORDER BY avg_acc DESC\nLIMIT 20;')">Avg accuracy per player</button>
+      <button class="quick-btn" onclick="setQuery('SELECT player_name, hit_group,\n  SUM(hits) AS total_hits,\n  SUM(dmg) AS total_dmg\nFROM demo_aim_hitgroups\nGROUP BY player_name, hit_group\nORDER BY player_name, total_hits DESC;')">Hitgroup breakdown</button>
+      <button class="quick-btn" onclick="setQuery('SELECT player_name, weapon,\n  SUM(kills) AS kills,\n  SUM(hits) AS hits,\n  SUM(dmg) AS dmg\nFROM demo_aim_weapons\nGROUP BY player_name, weapon\nORDER BY kills DESC\nLIMIT 30;')">Top weapon stats</button>
+
+      <h3 style="margin-top:18px;margin-bottom:10px">Cosmetics</h3>
+      <button class="quick-btn" onclick="setQuery('SELECT item_name, skin_name, COUNT(*) AS seen\nFROM demo_cosmetics\nWHERE is_agent = 0\nGROUP BY item_name, skin_name\nORDER BY seen DESC\nLIMIT 30;')">Most common skins</button>
+      <button class="quick-btn" onclick="setQuery('SELECT player_name, item_name, skin_name, wear_tier, stattrak\nFROM demo_cosmetics\nWHERE stattrak IS NOT NULL\nORDER BY stattrak DESC\nLIMIT 30;')">StatTrak items</button>
+      <button class="quick-btn" onclick="setQuery('SELECT player_name, item_name, side\nFROM demo_cosmetics\nWHERE is_agent = 1\nORDER BY player_name;')">Agents worn</button>
+    </div>
+  </aside>
+
+  <!-- Query editor -->
+  <section class="editor-panel">
+    <div>
+      <label style="font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)">SQL Query</label>
+    </div>
+    <textarea id="sql-editor" spellcheck="false"
+      placeholder="SELECT * FROM demos LIMIT 10;"
+      onkeydown="handleKey(event)"></textarea>
+
+    <div class="run-bar">
+      <button class="btn-run" onclick="runQuery()">&#9654; Run</button>
+      <button class="btn-clear" onclick="clearAll()">Clear</button>
+      <span id="status-bar"></span>
+    </div>
+
+    <div class="results-wrap">
+      <div class="results-empty" id="results-empty">Run a query to see results.</div>
+      <table id="results-table" style="display:none">
+        <thead id="results-head"></thead>
+        <tbody id="results-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  // ── Schema ────────────────────────────────────────────────────
+  function loadSchema() {
+    fetch('/api/admin/schema')
+      .then(r => r.json())
+      .then(schema => {
+        const el = document.getElementById('schema-body');
+        el.innerHTML = Object.entries(schema).map(([tbl, cols]) => `
+          <div class="schema-table">
+            <div class="schema-table-name" onclick="setQuery('SELECT * FROM ${tbl} LIMIT 100;')">
+              &#9654; ${tbl}
+            </div>
+            ${cols.map(c => `
+              <div class="schema-col">
+                <span class="col-name">${c.name}</span>
+                <span class="col-type">${c.type || 'ANY'}</span>
+                ${c.pk ? '<span class="col-pk">PK</span>' : ''}
+              </div>`).join('')}
+          </div>`).join('');
+      })
+      .catch(() => {
+        document.getElementById('schema-body').innerHTML =
+          '<span style="color:var(--red);font-size:.8rem">Failed to load schema.</span>';
+      });
+  }
+  loadSchema();
+
+  // ── Editor ────────────────────────────────────────────────────
+  function setQuery(sql) {
+    document.getElementById('sql-editor').value = sql;
+    document.getElementById('sql-editor').focus();
+  }
+
+  function handleKey(e) {
+    // Ctrl+Enter or Cmd+Enter → run
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      runQuery();
+    }
+    // Tab → insert spaces
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const el = e.target;
+      const s = el.selectionStart;
+      el.value = el.value.slice(0, s) + '  ' + el.value.slice(el.selectionEnd);
+      el.selectionStart = el.selectionEnd = s + 2;
+    }
+  }
+
+  function clearAll() {
+    document.getElementById('sql-editor').value = '';
+    document.getElementById('results-table').style.display = 'none';
+    document.getElementById('results-empty').textContent = 'Run a query to see results.';
+    document.getElementById('results-empty').style.display = 'block';
+    setStatus('', '');
+  }
+
+  // ── Query execution ───────────────────────────────────────────
+  function runQuery() {
+    const sql = document.getElementById('sql-editor').value.trim();
+    if (!sql) return;
+
+    const btn = document.querySelector('.btn-run');
+    btn.disabled = true;
+    setStatus('Running…', '');
+
+    fetch('/api/admin/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql }),
+    })
+      .then(r => r.json())
+      .then(res => {
+        btn.disabled = false;
+        if (res.error) {
+          setStatus('Error: ' + res.error, 'err');
+          showEmpty('Error: ' + res.error);
+          return;
+        }
+        const msg = res.message
+          ? res.message
+          : `${res.rowcount} row${res.rowcount !== 1 ? 's' : ''} — ${res.elapsed_ms} ms`;
+        setStatus(msg, 'ok');
+        renderResults(res.columns, res.rows);
+      })
+      .catch(err => {
+        btn.disabled = false;
+        setStatus('Network error', 'err');
+        showEmpty('Network error: ' + err.message);
+      });
+  }
+
+  function renderResults(columns, rows) {
+    const table = document.getElementById('results-table');
+    const empty = document.getElementById('results-empty');
+
+    if (!columns.length) {
+      table.style.display = 'none';
+      empty.textContent = 'Query executed successfully — no rows returned.';
+      empty.style.display = 'block';
+      return;
+    }
+
+    document.getElementById('results-head').innerHTML =
+      '<tr>' + columns.map(c => `<th>${esc(c)}</th>`).join('') + '</tr>';
+
+    document.getElementById('results-body').innerHTML = rows.map(row =>
+      '<tr>' + row.map(cell => {
+        if (cell === null || cell === undefined)
+          return '<td class="null">NULL</td>';
+        const s = String(cell);
+        // Truncate very long values (e.g. JSON blobs)
+        const display = s.length > 300 ? s.slice(0, 300) + '…' : s;
+        return `<td title="${esc(s.slice(0, 500))}">${esc(display)}</td>`;
+      }).join('') + '</tr>'
+    ).join('');
+
+    table.style.display = '';
+    empty.style.display = 'none';
+  }
+
+  function showEmpty(msg) {
+    document.getElementById('results-table').style.display = 'none';
+    const el = document.getElementById('results-empty');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function setStatus(msg, cls) {
+    const el = document.getElementById('status-bar');
+    el.textContent = msg;
+    el.className = cls;
+  }
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+</script>
+</body>
+</html>
