@@ -4,10 +4,10 @@ const TRAIL_LEN = 12
 
 // Grenade rendering config
 const NADE_STYLE = {
-  smoke: { fill: 'rgba(160,160,170,0.28)', stroke: 'rgba(200,200,210,0.55)', radius: 144 },
-  fire:  { fill: 'rgba(255,90,0,0.30)',    stroke: 'rgba(255,140,0,0.65)',   radius: 110 },
-  flash: { fill: 'rgba(255,245,100,0.55)', stroke: 'rgba(255,255,200,0.85)', radius: 48  },
-  he:    { fill: 'rgba(220,60,0,0.50)',    stroke: 'rgba(255,120,40,0.80)',  radius: 72  },
+  smoke: { fill: 'rgba(160,160,170,0.55)', stroke: 'rgba(220,220,230,0.90)', radius: 200 },
+  fire:  { fill: 'rgba(255,90,0,0.60)',    stroke: 'rgba(255,160,0,0.90)',   radius: 160 },
+  flash: { fill: 'rgba(255,245,100,0.80)', stroke: 'rgba(255,255,200,1.0)',  radius: 80  },
+  he:    { fill: 'rgba(220,60,0,0.75)',    stroke: 'rgba(255,120,40,1.0)',   radius: 100 },
 }
 
 function worldToCanvas(wx, wy, bounds, size) {

@@ -200,6 +200,7 @@ export default function MapView({ demo, demoId }) {
       setFrames([])
       return
     }
+    console.log('tickData keys:', Object.keys(tickData), 'grenades:', tickData.grenades?.length)
     const f = tickData.frames || []
     setFrames(f)
     setGrenades(tickData.grenades || [])
@@ -258,6 +259,9 @@ export default function MapView({ demo, demoId }) {
       return next
     })
   }
+
+  const currentTick = frames[frame]?.t ?? 0
+  const activeGrenades = grenades.filter(g => currentTick >= g.from_tick && currentTick <= g.to_tick)
 
   const tickLabel = frames.length
     ? `Frame ${frame + 1} / ${frames.length}  •  Tick ${frames[frame]?.t ?? '—'}`
@@ -348,6 +352,11 @@ export default function MapView({ demo, demoId }) {
             disabled={!frames.length}
           />
           <div className={styles.mapTickLabel}>{tickLabel}</div>
+          {grenades.length > 0 && (
+            <div className={styles.mapTickLabel} style={{ color: activeGrenades.length ? '#fbbf24' : 'var(--muted)' }}>
+              Nades: {grenades.length} total • {activeGrenades.length} active
+            </div>
+          )}
         </div>
 
         {/* Player legend */}

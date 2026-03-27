@@ -287,6 +287,12 @@ CREATE TABLE IF NOT EXISTS demo_ticks (
     ticks_data BLOB NOT NULL,
     FOREIGN KEY (demo_id) REFERENCES demos(id)
 );
+
+CREATE TABLE IF NOT EXISTS demo_grenades (
+    demo_id        TEXT PRIMARY KEY,
+    grenades_data  BLOB NOT NULL,
+    FOREIGN KEY (demo_id) REFERENCES demos(id)
+);
 """
 
 
@@ -456,7 +462,7 @@ def _db_init():
 
 
 def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
-             ticks_by_round: dict = None):
+             ticks_by_round: dict = None, grenades_by_round: dict = None):
     h = data_dict.get("header") or {}
     has_ticks = bool(ticks_by_round)
     log.info("db_save: starting — demo_id=%s filename=%s map=%s", demo_id, filename, map_name)
@@ -559,6 +565,14 @@ def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
             (demo_id, _blob(ticks_by_round)),
         )
 
+    # ---- demo_grenades ----
+    con.execute("DELETE FROM demo_grenades WHERE demo_id = ?", (demo_id,))
+    if grenades_by_round:
+        con.execute(
+            "INSERT INTO demo_grenades (demo_id, grenades_data) VALUES (?,?)",
+            (demo_id, _blob(grenades_by_round)),
+        )
+
     # ---- demo_cosmetics ----
     con.execute("DELETE FROM demo_cosmetics WHERE demo_id = ?", (demo_id,))
     swag = data_dict.get("swag_breakdown")
@@ -612,6 +626,9 @@ def _db_get(demo_id: str):
     ).fetchall()
     ticks_row      = con.execute(
         "SELECT ticks_data FROM demo_ticks WHERE demo_id = ?", (demo_id,)
+    ).fetchone()
+    grenades_row   = con.execute(
+        "SELECT grenades_data FROM demo_grenades WHERE demo_id = ?", (demo_id,)
     ).fetchone()
     con.close()
 
@@ -692,10 +709,14 @@ def _db_get(demo_id: str):
 
     if ticks_row and ticks_row["ticks_data"]:
         ticks_by_round = {int(k): v for k, v in _unblob(ticks_row["ticks_data"]).items()}
+        grenades_by_round = {}
+        if grenades_row and grenades_row["grenades_data"]:
+            grenades_by_round = {int(k): v for k, v in _unblob(grenades_row["grenades_data"]).items()}
         if len(_session_cache) >= MAX_SESSIONS:
             _session_cache.popitem(last=False)
         _session_cache[demo_id] = {
             "ticks":    ticks_by_round,
+            "grenades": grenades_by_round,
             "map_name": row["map"],
         }
         data["has_ticks"] = True
@@ -706,7 +727,7 @@ def _db_get(demo_id: str):
 def _db_delete(demo_id: str) -> bool:
     con = sqlite3.connect(DB_PATH)
     for tbl in ("demo_rounds", "demo_kills", "demo_scoreboard", "demo_aim",
-                "demo_aim_weapons", "demo_aim_hitgroups", "demo_ticks", "demo_cosmetics"):
+                "demo_aim_weapons", "demo_aim_hitgroups", "demo_ticks", "demo_grenades", "demo_cosmetics"):
         con.execute(f"DELETE FROM {tbl} WHERE demo_id = ?", (demo_id,))
     cur = con.execute("DELETE FROM demos WHERE id = ?", (demo_id,))
     con.commit()
@@ -731,6 +752,7 @@ MAP_BOUNDS = {
     "de_anubis":   {"pos_x": -2796, "pos_y":  3328, "scale": 5.22},
     "de_vertigo":  {"pos_x": -3168, "pos_y":  1762, "scale": 4.0},
     "de_overpass": {"pos_x": -4831, "pos_y":  1781, "scale": 5.2},
+    "de_train":    {"pos_x": -2308, "pos_y":  2078, "scale": 4.082077},
 }
 
 
@@ -764,7 +786,7 @@ def _safe(val, default="?"):
 def _get_map_bounds(map_name: str) -> dict:
     """Return pos_x, pos_y, scale for the map. Tries awpy first, falls back to hardcoded."""
     try:
-        from awpy.data import MAP_DATA
+        from awpy.data.map_data import MAP_DATA
         if map_name in MAP_DATA:
             d = MAP_DATA[map_name]
             return {"pos_x": d["pos_x"], "pos_y": d["pos_y"], "scale": d["scale"]}
@@ -778,6 +800,7 @@ _NADE_EVENT_TYPE = {
     "flashbang_detonate":    "flash",
     "hegrenade_detonate":    "he",
     "molotov_detonate":      "fire",
+    "inferno_startburn":     "fire",
 }
 _NADE_DURATIONS = {
     "smoke": 1152,   # ~18 s × 64 hz
@@ -815,7 +838,12 @@ def extract_grenades(dem_path, ticks_by_round: dict) -> dict:
 
         for event_name, nade_type in _NADE_EVENT_TYPE.items():
             try:
-                df = parser.parse_events(event_name, other=["round_num"])
+                result_list = parser.parse_events([event_name], other=["round_num"])
+                if not result_list:
+                    continue
+                # result_list is [(event_name, DataFrame), ...]
+                item = result_list[0]
+                df = item[1] if isinstance(item, tuple) else item
                 if df is None or df.empty:
                     continue
                 cols = list(df.columns)
@@ -850,6 +878,8 @@ def extract_grenades(dem_path, ticks_by_round: dict) -> dict:
     except Exception as e:
         log.warning("extract_grenades failed: %s", e)
 
+    total = sum(len(v) for v in result.values())
+    log.info("extract_grenades: %d grenades across %d rounds", total, len(result))
     return result
 
 
@@ -1630,8 +1660,10 @@ def api_parse():
     try:
         data = parse_demo(tmp_path)
         data["filename"] = f.filename
-        ticks = _session_cache.get(data["session_id"], {}).get("ticks", {})
-        _db_save(data["session_id"], f.filename, data["header"]["map"], data, ticks)
+        cached = _session_cache.get(data["session_id"], {})
+        ticks    = cached.get("ticks", {})
+        grenades = cached.get("grenades", {})
+        _db_save(data["session_id"], f.filename, data["header"]["map"], data, ticks, grenades)
         elapsed = time.monotonic() - _t0
         log.info("parse: completed %s — map=%s rounds=%s ticks=%s (%.2fs)",
                  f.filename, data["header"].get("map"),

@@ -9,6 +9,9 @@ export default defineConfig({
       '/api': 'http://localhost:5000',
       '/images': 'http://localhost:5000',
     },
+    watch: {
+      usePolling: true,
+    },
   },
   build: {
     outDir: '../static_react',
