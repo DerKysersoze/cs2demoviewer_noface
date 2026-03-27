@@ -508,6 +508,8 @@ def _db_init():
                         _di = _item.get("def_index")
                         _nm = _item.get("name")
                         if _di is not None and _nm:
+                            if _is_agent:
+                                _nm = _nm.split(" | ")[0]
                             fix_lookup[int(_di)] = _nm
             except Exception as _e:
                 log.warning("DB: item_name fix: failed to load %s: %s", _p.name, _e)
