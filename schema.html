@@ -324,9 +324,9 @@ erDiagram
 erDiagram
     demos {
         TEXT id PK
-        TEXT filename "NOT NULL"
-        TEXT map "NOT NULL"
-        TEXT uploaded_at "NOT NULL"
+        TEXT filename
+        TEXT map
+        TEXT uploaded_at
         TEXT tickrate
         TEXT duration
         TEXT ct_team
@@ -335,30 +335,30 @@ erDiagram
         INTEGER t_wins
         INTEGER total_rounds
         TEXT session_id
-        INTEGER has_ticks "0 or 1"
-        BLOB rounds "zlib+JSON"
-        BLOB kills "zlib+JSON"
-        BLOB scoreboard "zlib+JSON"
-        BLOB aim_breakdown "zlib+JSON"
-        BLOB ticks_data "zlib+JSON"
+        INTEGER has_ticks
+        BLOB rounds
+        BLOB kills
+        BLOB scoreboard
+        BLOB aim_breakdown
+        BLOB ticks_data
     }
     demo_cosmetics {
-        INTEGER id PK "AUTOINCREMENT"
-        TEXT demo_id FK "NOT NULL"
+        INTEGER id PK
+        TEXT demo_id FK
         TEXT steamid
         TEXT player_name
-        TEXT team "CT or T"
+        TEXT team
         INTEGER def_index
         TEXT item_name
         TEXT skin_name
         INTEGER paint_index
         INTEGER paint_seed
         REAL wear
-        TEXT wear_tier "FN/MW/FT/WW/BS"
-        TEXT custom_name "name-tag"
-        INTEGER stattrak "count or NULL"
-        INTEGER is_agent "0 or 1"
-        TEXT side "CT, T, or both"
+        TEXT wear_tier
+        TEXT custom_name
+        INTEGER stattrak
+        INTEGER is_agent
+        TEXT side
     }
 
     demos ||--o{ demo_cosmetics : "demo_id"
@@ -396,21 +396,21 @@ erDiagram
         TEXT rarity_id
         TEXT rarity_name
         TEXT rarity_color
-        INTEGER stattrak "0 or 1"
-        INTEGER souvenir "0 or 1"
+        INTEGER stattrak
+        INTEGER souvenir
         TEXT paint_index
         TEXT team_id
         TEXT team_name
-        INTEGER legacy_model "0 or 1"
+        INTEGER legacy_model
         TEXT image
         TEXT original_name
-        JSON wears "array of wear tiers"
-        JSON collections "array of collections"
-        JSON crates "array of crates"
+        JSON wears
+        JSON collections
+        JSON crates
     }
     skins_not_grouped {
         TEXT id PK
-        TEXT skin_id FK "refs skins.id"
+        TEXT skin_id FK
         TEXT name
         TEXT description
         TEXT weapon_id
@@ -424,8 +424,8 @@ erDiagram
         REAL max_float
         TEXT wear_id
         TEXT wear_name
-        INTEGER stattrak "0 or 1"
-        INTEGER souvenir "0 or 1"
+        INTEGER stattrak
+        INTEGER souvenir
         TEXT paint_index
         TEXT rarity_id
         TEXT rarity_name
@@ -436,19 +436,19 @@ erDiagram
         TEXT style_id
         TEXT style_name
         TEXT style_url
-        INTEGER legacy_model "0 or 1"
+        INTEGER legacy_model
         TEXT image
         TEXT original_name
         TEXT original_image
     }
     inventory {
         TEXT weapon_id PK
-        TEXT paint_index PK "composite PK"
+        TEXT paint_index PK
         TEXT name
         TEXT rarity_id
         TEXT rarity_name
         TEXT rarity_color
-        INTEGER marketable "0 or 1"
+        INTEGER marketable
         TEXT image
     }
 
@@ -506,7 +506,7 @@ erDiagram
         TEXT rarity_name
         TEXT rarity_color
         TEXT type
-        INTEGER genuine "0 or 1"
+        INTEGER genuine
         TEXT market_hash_name
         TEXT image
         TEXT original_item_name
@@ -518,8 +518,8 @@ erDiagram
         TEXT image
         TEXT original_name
         TEXT original_image
-        JSON crates "linked crates"
-        JSON contains "skin entries"
+        JSON crates
+        JSON contains
     }
     crates {
         TEXT id PK
@@ -532,7 +532,7 @@ erDiagram
         TEXT rarity_name
         TEXT rarity_color
         TEXT market_hash_name
-        INTEGER rental "0 or 1"
+        INTEGER rental
         TEXT image
         TEXT model_player
         TEXT loot_list
@@ -593,11 +593,11 @@ erDiagram
         TEXT description
         TEXT def_index
         TEXT market_hash_name
-        INTEGER marketable "0 or 1"
+        INTEGER marketable
         TEXT image
         TEXT original_item_name
         TEXT original_image
-        JSON crates "unlocks these crates"
+        JSON crates
     }
     music_kits {
         TEXT id PK
@@ -608,7 +608,7 @@ erDiagram
         TEXT rarity_name
         TEXT rarity_color
         TEXT market_hash_name
-        INTEGER exclusive "0 or 1"
+        INTEGER exclusive
         TEXT image
         TEXT original_name
         TEXT original_image

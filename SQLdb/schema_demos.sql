@@ -10,11 +10,5 @@ CREATE TABLE IF NOT EXISTS demos (
     ct_wins       INTEGER,
     t_wins        INTEGER,
     total_rounds  INTEGER,
-    session_id    TEXT,
-    has_ticks     INTEGER NOT NULL DEFAULT 0,
-    rounds        BLOB,
-    kills         BLOB,
-    scoreboard    BLOB,
-    aim_breakdown  BLOB,
-    ticks_data    BLOB
+    has_ticks     INTEGER NOT NULL DEFAULT 0
 );
