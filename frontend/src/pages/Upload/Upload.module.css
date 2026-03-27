@@ -1,0 +1,176 @@
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+/* ── Drop zone ── */
+.dropZone {
+  width: 100%;
+  max-width: 520px;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 56px 32px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+}
+.dropZone:hover,
+.dragOver {
+  border-color: var(--ct);
+  background: rgba(56,189,248,.05);
+}
+.dropIcon { font-size: 3rem; margin-bottom: 14px; }
+.dropZone p { color: var(--muted); margin-top: 8px; font-size: .88rem; }
+.dropZone strong { color: var(--text); font-size: 1.05rem; }
+
+/* ── Single-file progress ── */
+.progressWrap {
+  width: 100%;
+  max-width: 520px;
+  text-align: center;
+}
+.progressWrap p { margin-bottom: 12px; color: var(--muted); font-size: .9rem; }
+
+/* ── Multi-file queue ── */
+.queueWrap { width: 100%; max-width: 520px; }
+
+.queueHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.queueHeader span {
+  font-size: .78rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  font-weight: 700;
+}
+
+.queueList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.qi {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 14px;
+  transition: border-color .2s;
+}
+.qiUploading { border-color: var(--ct); }
+.qiDone      { border-color: var(--green); }
+.qiError     { border-color: var(--red); }
+
+.qiIcon   { font-size: 1rem; flex-shrink: 0; width: 20px; text-align: center; }
+.qiName   { font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qiStatus {
+  font-size: .75rem;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.qiUploading .qiStatus { color: var(--ct); }
+.qiDone      .qiStatus { color: var(--green); }
+.qiError     .qiStatus { color: var(--red); }
+
+.qiProgress {
+  width: 100%;
+  height: 3px;
+  background: var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-top: 5px;
+}
+.qiProgressFill {
+  height: 100%;
+  background: var(--ct);
+  transition: width .2s;
+  animation: indeterminate 1.4s infinite;
+}
+
+@keyframes indeterminate {
+  0%   { transform: translateX(-100%) scaleX(.5); }
+  100% { transform: translateX(200%) scaleX(.5); }
+}
+
+.queueSummary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-top: 4px;
+  text-align: center;
+}
+.queueSummary p { color: var(--muted); font-size: .88rem; }
+
+/* ── Error banner ── */
+.errorBanner {
+  width: 100%;
+  max-width: 520px;
+  margin-top: 16px;
+  background: rgba(248,113,113,.1);
+  border: 1px solid var(--red);
+  color: var(--red);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  font-size: .88rem;
+}
+
+/* ── Demo history ── */
+.historySection { width: 100%; max-width: 520px; margin-top: 40px; }
+.historyHeading {
+  font-size: .8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.historyEmpty { color: var(--muted); font-size: .85rem; }
+.historyList  { display: flex; flex-direction: column; gap: 8px; }
+
+.demoRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.demoRow:hover { border-color: var(--ct); background: var(--surface2); }
+
+.demoName {
+  flex: 1;
+  font-weight: 600;
+  font-size: .88rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.demoMeta { font-size: .75rem; color: var(--muted); white-space: nowrap; }
+.demoDel {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: .9rem;
+  padding: 2px 5px;
+  border-radius: 4px;
+  transition: color .15s;
+  line-height: 1;
+}
+.demoDel:hover { color: var(--red); }
