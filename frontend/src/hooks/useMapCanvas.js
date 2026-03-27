@@ -112,6 +112,14 @@ export function useMapCanvas() {
         return
       }
 
+      // Side ring (CT = blue, T = yellow) — outermost, drawn first
+      ctx.beginPath()
+      ctx.arc(pos.x, pos.y, r + 5, 0, Math.PI * 2)
+      ctx.strokeStyle = (pl.side || '').toUpperCase().includes('CT') ? '#38bdf8' : '#fbbf24'
+      ctx.lineWidth   = 2.5
+      ctx.globalAlpha = 1
+      ctx.stroke()
+
       // HP arc
       ctx.beginPath()
       ctx.arc(pos.x, pos.y, r + 2, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * Math.min(1, (pl.hp || 0) / 100))
@@ -126,14 +134,6 @@ export function useMapCanvas() {
       ctx.fillStyle   = color
       ctx.globalAlpha = 0.9
       ctx.fill()
-
-      // Side ring (CT = blue, T = yellow)
-      ctx.beginPath()
-      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2)
-      ctx.strokeStyle = (pl.side || '').toUpperCase().includes('CT') ? '#38bdf8' : '#fbbf24'
-      ctx.lineWidth   = 1.5
-      ctx.globalAlpha = 1
-      ctx.stroke()
 
       // Name label
       ctx.font      = 'bold 9px sans-serif'
