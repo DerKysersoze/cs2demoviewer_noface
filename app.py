@@ -371,7 +371,7 @@ def _db_init():
 
     # ---- Drop stale reference/struct tables from old schema ----
     stale_tables = {
-        "skin_names", "skins", "agents", "base_weapons", "collectibles",
+        "skin_names", "skins", "inventory", "agents", "base_weapons", "collectibles",
         "collections", "crates", "graffiti", "highlights", "keychains",
         "keys", "music_kits", "patches", "skins_not_grouped",
         "sticker_slabs", "stickers", "tools",
