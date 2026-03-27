@@ -1,0 +1,170 @@
+.layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  flex: 1;
+  min-height: 0;
+  height: calc(100vh - 53px); /* subtract header height */
+}
+
+/* ── Schema sidebar ── */
+.schemaPanel {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.panelHeading {
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.schemaTable { margin-bottom: 16px; }
+
+.schemaTableName {
+  font-weight: 700;
+  font-size: .85rem;
+  color: var(--ct);
+  margin-bottom: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.schemaTableName:hover { opacity: .8; }
+
+.schemaCol {
+  display: flex;
+  gap: 8px;
+  font-size: .75rem;
+  padding: 3px 0 3px 14px;
+  border-left: 2px solid var(--border);
+  margin-bottom: 2px;
+  align-items: center;
+}
+.colName { color: var(--text); flex: 1; }
+.colType { color: var(--muted); font-size: .7rem; }
+.colPk   { color: var(--t); font-size: .65rem; font-weight: 700; }
+
+.quickPanel { margin-top: 20px; }
+
+.quickBtn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: .75rem;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 5px;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.quickBtn:hover {
+  background: var(--surface2);
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+/* ── Editor panel ── */
+.editorPanel {
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.editorLabel {
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--muted);
+}
+
+.sqlEditor {
+  width: 100%;
+  min-height: 140px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: 'Consolas', 'Cascadia Code', monospace;
+  font-size: 13px;
+  padding: 12px 14px;
+  resize: vertical;
+  outline: none;
+  transition: border-color .15s;
+  tab-size: 2;
+}
+.sqlEditor:focus { border-color: var(--ct); }
+
+.runBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.statusOk  { color: var(--green); font-size: .78rem; }
+.statusErr { color: var(--red);   font-size: .78rem; }
+.statusDim { color: var(--muted); font-size: .78rem; }
+
+/* ── Results ── */
+.resultsWrap {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.resultsEmpty {
+  padding: 40px;
+  text-align: center;
+  color: var(--muted);
+  font-size: .88rem;
+}
+
+.resultsTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+}
+.resultsTable th {
+  background: var(--surface2);
+  color: var(--ct);
+  font-weight: 600;
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.resultsTable td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  max-width: 400px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-family: 'Consolas', monospace;
+  font-size: .8rem;
+}
+.resultsTable tr:last-child td { border-bottom: none; }
+.resultsTable tr:hover td { background: var(--surface2); }
+
+.nullCell { color: var(--muted); font-style: italic; }
+
+/* ── Shared ── */
+.dim     { color: var(--muted); font-size: .8rem; }
+.errText { color: var(--red); font-size: .8rem; }
