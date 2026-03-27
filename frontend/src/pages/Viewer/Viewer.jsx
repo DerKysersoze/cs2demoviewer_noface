@@ -9,6 +9,7 @@ import Rounds        from './tabs/Rounds'
 import KillFeed      from './tabs/KillFeed'
 import AimBreakdown  from './tabs/AimBreakdown'
 import SwagBreakdown from './tabs/SwagBreakdown'
+import MapView       from './tabs/MapView'
 import styles from './Viewer.module.css'
 
 const TABS = [
@@ -101,7 +102,7 @@ export default function Viewer() {
         {/* Tab panels */}
         {tab === 'scoreboard' && <Scoreboard scoreboard={d.scoreboard || []} />}
         {tab === 'timeline'   && <Timeline   rounds={d.rounds || []} kills={d.kills || []} ctTeam={d.ct_team} tTeam={d.t_team} />}
-        {tab === 'map'        && <div className="muted" style={{ padding: 40, textAlign: 'center' }}>Visual Timeline — Phase 5</div>}
+        {tab === 'map'        && <MapView demo={d} demoId={id} />}
         {tab === 'rounds'     && <Rounds     rounds={d.rounds || []} />}
         {tab === 'killfeed'   && <KillFeed   kills={d.kills || []} />}
         {tab === 'aim'        && <AimBreakdown  aimBreakdown={d.aim_breakdown || []} />}
