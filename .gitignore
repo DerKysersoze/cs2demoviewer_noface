@@ -17,3 +17,6 @@ node_modules/
 
 # Local task notes (not synced)
 tasks/
+
+# Local mockups (not synced)
+mockups/
