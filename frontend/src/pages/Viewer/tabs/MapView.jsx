@@ -40,7 +40,7 @@ function PlayerBar({ name, hp, armor, helmet, alive, color, hasFrames }) {
       {hasFrames && (
         <div className={styles.armorRow}>
           <span className={styles.armorIcon} title={helmet ? 'Kevlar + Helmet' : 'Kevlar only'}>
-            {helmet ? '🪖' : '🛡'}
+            {helmet ? '🪖' : '🦺'}
           </span>
           <div className={styles.barTrack} style={{ flex: 1 }}>
             <div className={styles.barFill} style={{
