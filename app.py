@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
 CS2 Demo Viewer - Web Backend
-Run: python app.py
-Then open http://localhost:5000
 """
 
 import argparse
@@ -1162,11 +1160,6 @@ def extract_cosmetics(dem_path: str) -> list:
         log.warning("extract_cosmetics parse failed: %s", e)
         return []
 
-    log.debug("parse_skins columns: %s", list(skins_df.columns))
-    def_cols = [c for c in skins_df.columns if "def" in c.lower()]
-    log.debug("parse_skins def-related columns: %s", def_cols)
-    log.debug("parse_skins sample:\n%s", skins_df.head().to_string())
-
     # ---- StatTrak: steamid -> {def_index -> count} ----
     stattrak: dict = {}
     try:
@@ -1444,12 +1437,21 @@ def _extract_aim(kills: list, damages_df, rounds: list, shots_df=None) -> list:
     return result
 
 
+def _duration(h: dict) -> str:
+    try:
+        return f"{float(h['playback_time']):.1f}s"
+    except Exception:
+        try:
+            return f"{int(h['ticks_played']) / int(h['tick_rate']):.1f}s"
+        except Exception:
+            return "?"
+
+
 def parse_demo(dem_path: str) -> dict:
     from awpy import Demo
 
     demo = Demo(dem_path)
     demo.parse()
-
 
     # ---- Header ----
     h = demo.header or {}
@@ -1621,16 +1623,6 @@ def parse_demo(dem_path: str) -> dict:
         "session_id":     session_id,
         "has_ticks":      bool(ticks_by_round),
     }
-
-
-def _duration(h: dict) -> str:
-    try:
-        return f"{float(h['playback_time']):.1f}s"
-    except Exception:
-        try:
-            return f"{int(h['ticks_played']) / int(h['tick_rate']):.1f}s"
-        except Exception:
-            return "?"
 
 
 @app.route("/")

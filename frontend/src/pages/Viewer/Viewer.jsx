@@ -19,7 +19,6 @@ const TABS = [
   { id: 'rounds',     label: 'Rounds' },
   { id: 'killfeed',   label: 'Kill Feed' },
   { id: 'aim',        label: 'Aim Breakdown' },
-  { id: 'swag',       label: 'Swag Breakdown' },
 ]
 
 export default function Viewer() {
@@ -106,7 +105,6 @@ export default function Viewer() {
         {tab === 'rounds'     && <Rounds     rounds={d.rounds || []} />}
         {tab === 'killfeed'   && <KillFeed   kills={d.kills || []} />}
         {tab === 'aim'        && <AimBreakdown  aimBreakdown={d.aim_breakdown || []} />}
-        {tab === 'swag'       && <SwagBreakdown swagBreakdown={d.swag_breakdown || []} />}
       </div>
     </>
   )
