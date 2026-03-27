@@ -2,7 +2,6 @@
 demos.db
 
 # Downloaded/cached data files (large, regenerated at runtime)
-struct_db/
 images/
 skin_names_cache.json
 core.log
@@ -15,3 +14,6 @@ __pycache__/
 # Node
 package.json
 node_modules/
+
+# Local task notes (not synced)
+tasks/

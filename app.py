@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
 CS2 Demo Viewer - Web Backend
-Run: python app.py
-Then open http://localhost:5000
 """
 
 import argparse
@@ -11,7 +9,6 @@ import json
 import logging
 import os
 import sqlite3
-import threading
 import time
 import zlib
 import tempfile
@@ -20,7 +17,6 @@ import uuid
 from collections import OrderedDict
 from pathlib import Path
 
-import requests
 from flask import Flask, g, jsonify, render_template, request, send_file
 
 # ── Logging setup ──────────────────────────────────────────────────────────────
@@ -69,77 +65,6 @@ def _after(response):
 # ── SQLite demo history ────────────────────────────────────────────────────────
 DB_PATH       = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demos.db")
 STRUCT_DB_DIR = Path(__file__).parent / "struct_db"
-IMAGES_DIR    = Path(__file__).parent / "images"
-
-
-def _cache_all_images():
-    """Download and cache images from struct_db JSON files. Runs in a background thread."""
-
-    def _load_json(name):
-        p = STRUCT_DB_DIR / name
-        if not p.exists():
-            return []
-        with open(p, encoding="utf-8") as f:
-            return json.load(f)
-
-    def _cache_url(table_dir, item_id, suffix, url):
-        if not url or not isinstance(url, str) or not url.startswith(("http://", "https://")):
-            return "skip"
-        fname = f"{item_id}{suffix}"
-        if list(table_dir.glob(f"{fname}.*")):
-            return "skip"
-        try:
-            resp = requests.get(url, timeout=15)
-            resp.raise_for_status()
-            ext = ".png" if "png" in resp.headers.get("Content-Type", "") else ".jpg"
-            (table_dir / f"{fname}{ext}").write_bytes(resp.content)
-            log.debug("cached: %s/%s%s", table_dir.name, fname, ext)
-            return "cached"
-        except Exception as e:
-            log.warning("image fetch failed [%s/%s]: %s", table_dir.name, fname, e)
-            return "failed"
-
-    def _process(json_name, dir_name, extractors):
-        """extractors: list of (suffix, fn) where fn(item) -> url or None."""
-        data = _load_json(json_name)
-        if not isinstance(data, list):
-            return
-        table_dir = IMAGES_DIR / dir_name
-        table_dir.mkdir(parents=True, exist_ok=True)
-        c = s = f = 0
-        for item in data:
-            iid = item.get("id", "")
-            for suffix, fn in extractors:
-                r = _cache_url(table_dir, iid, suffix, fn(item))
-                if r == "cached":
-                    c += 1
-                elif r == "skip":
-                    s += 1
-                else:
-                    f += 1
-        log.info("%s images: cached=%d  skipped=%d  failed=%d", dir_name, c, s, f)
-
-    img   = lambda item: item.get("image")
-    orig  = lambda item: (item.get("original") or {}).get("image_inventory")
-    thumb = lambda item: item.get("thumbnail")
-
-    _process("agents.json",            "agents",            [("", img), ("_original_image", orig)])
-    _process("base_weapons.json",      "base_weapons",      [("", img)])
-    _process("collectibles.json",      "collectibles",      [("", img), ("_original_image", orig)])
-    _process("collections.json",       "collections",       [("", img), ("_original_image", orig)])
-    _process("crates.json",            "crates",            [("", img), ("_original_image", orig)])
-    _process("graffiti.json",          "graffiti",          [("", img), ("_original_image", orig)])
-    _process("highlights.json",        "highlights",        [("", img), ("_thumbnail", thumb), ("_original_image", orig)])
-    _process("keychains.json",         "keychains",         [("", img), ("_original_image", orig)])
-    _process("keys.json",              "keys",              [("", img), ("_original_image", orig)])
-    _process("music_kits.json",        "music_kits",        [("", img), ("_original_image", orig)])
-    _process("patches.json",           "patches",           [("", img), ("_original_image", orig)])
-    _process("skins.json",             "skins",             [("", img)])
-    _process("skins_not_grouped.json", "skins_not_grouped", [("", img), ("_original_image", orig)])
-    _process("sticker_slabs.json",     "sticker_slabs",     [("", img), ("_original_image", orig)])
-    _process("stickers.json",          "stickers",          [("", img), ("_original_image", orig)])
-    _process("tools.json",             "tools",             [("", img), ("_original_image", orig)])
-    log.info("image cache: all done")
 
 
 
@@ -190,7 +115,6 @@ def _cosmetics_insert_rows(con, demo_id: str, swag: list):
 
 def _cosmetics_to_swag(rows) -> list:
     """Reconstruct swag_breakdown list from demo_cosmetics rows."""
-    from collections import OrderedDict
     players: dict = OrderedDict()
     for r in rows:
         sid = r["steamid"] or ""
@@ -359,6 +283,12 @@ CREATE INDEX IF NOT EXISTS idx_demo_aim_hitgroups_demo_id ON demo_aim_hitgroups(
 CREATE TABLE IF NOT EXISTS demo_ticks (
     demo_id    TEXT PRIMARY KEY,
     ticks_data BLOB NOT NULL,
+    FOREIGN KEY (demo_id) REFERENCES demos(id)
+);
+
+CREATE TABLE IF NOT EXISTS demo_grenades (
+    demo_id        TEXT PRIMARY KEY,
+    grenades_data  BLOB NOT NULL,
     FOREIGN KEY (demo_id) REFERENCES demos(id)
 );
 """
@@ -530,7 +460,7 @@ def _db_init():
 
 
 def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
-             ticks_by_round: dict = None):
+             ticks_by_round: dict = None, grenades_by_round: dict = None):
     h = data_dict.get("header") or {}
     has_ticks = bool(ticks_by_round)
     log.info("db_save: starting — demo_id=%s filename=%s map=%s", demo_id, filename, map_name)
@@ -633,6 +563,14 @@ def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
             (demo_id, _blob(ticks_by_round)),
         )
 
+    # ---- demo_grenades ----
+    con.execute("DELETE FROM demo_grenades WHERE demo_id = ?", (demo_id,))
+    if grenades_by_round:
+        con.execute(
+            "INSERT INTO demo_grenades (demo_id, grenades_data) VALUES (?,?)",
+            (demo_id, _blob(grenades_by_round)),
+        )
+
     # ---- demo_cosmetics ----
     con.execute("DELETE FROM demo_cosmetics WHERE demo_id = ?", (demo_id,))
     swag = data_dict.get("swag_breakdown")
@@ -686,6 +624,9 @@ def _db_get(demo_id: str):
     ).fetchall()
     ticks_row      = con.execute(
         "SELECT ticks_data FROM demo_ticks WHERE demo_id = ?", (demo_id,)
+    ).fetchone()
+    grenades_row   = con.execute(
+        "SELECT grenades_data FROM demo_grenades WHERE demo_id = ?", (demo_id,)
     ).fetchone()
     con.close()
 
@@ -766,10 +707,14 @@ def _db_get(demo_id: str):
 
     if ticks_row and ticks_row["ticks_data"]:
         ticks_by_round = {int(k): v for k, v in _unblob(ticks_row["ticks_data"]).items()}
+        grenades_by_round = {}
+        if grenades_row and grenades_row["grenades_data"]:
+            grenades_by_round = {int(k): v for k, v in _unblob(grenades_row["grenades_data"]).items()}
         if len(_session_cache) >= MAX_SESSIONS:
             _session_cache.popitem(last=False)
         _session_cache[demo_id] = {
             "ticks":    ticks_by_round,
+            "grenades": grenades_by_round,
             "map_name": row["map"],
         }
         data["has_ticks"] = True
@@ -780,7 +725,7 @@ def _db_get(demo_id: str):
 def _db_delete(demo_id: str) -> bool:
     con = sqlite3.connect(DB_PATH)
     for tbl in ("demo_rounds", "demo_kills", "demo_scoreboard", "demo_aim",
-                "demo_aim_weapons", "demo_aim_hitgroups", "demo_ticks", "demo_cosmetics"):
+                "demo_aim_weapons", "demo_aim_hitgroups", "demo_ticks", "demo_grenades", "demo_cosmetics"):
         con.execute(f"DELETE FROM {tbl} WHERE demo_id = ?", (demo_id,))
     cur = con.execute("DELETE FROM demos WHERE id = ?", (demo_id,))
     con.commit()
@@ -805,6 +750,7 @@ MAP_BOUNDS = {
     "de_anubis":   {"pos_x": -2796, "pos_y":  3328, "scale": 5.22},
     "de_vertigo":  {"pos_x": -3168, "pos_y":  1762, "scale": 4.0},
     "de_overpass": {"pos_x": -4831, "pos_y":  1781, "scale": 5.2},
+    "de_train":    {"pos_x": -2308, "pos_y":  2078, "scale": 4.082077},
 }
 
 
@@ -826,18 +772,6 @@ def _to_pd(df):
         return None
 
 
-def _col(row, *names, default=None):
-    """Return the first non-null value among the given column names."""
-    for name in names:
-        try:
-            v = row.get(name)
-            if v is not None and str(v) != "nan":
-                return v
-        except Exception:
-            pass
-    return default
-
-
 def _safe(val, default="?"):
     try:
         if val is None or (isinstance(val, float) and val != val):
@@ -850,7 +784,7 @@ def _safe(val, default="?"):
 def _get_map_bounds(map_name: str) -> dict:
     """Return pos_x, pos_y, scale for the map. Tries awpy first, falls back to hardcoded."""
     try:
-        from awpy.data import MAP_DATA
+        from awpy.data.map_data import MAP_DATA
         if map_name in MAP_DATA:
             d = MAP_DATA[map_name]
             return {"pos_x": d["pos_x"], "pos_y": d["pos_y"], "scale": d["scale"]}
@@ -859,7 +793,95 @@ def _get_map_bounds(map_name: str) -> dict:
     return MAP_BOUNDS.get(map_name, {"pos_x": -2476, "pos_y": 3239, "scale": 4.4})
 
 
-def extract_ticks(demo) -> dict:
+_NADE_EVENT_TYPE = {
+    "smokegrenade_detonate": "smoke",
+    "flashbang_detonate":    "flash",
+    "hegrenade_detonate":    "he",
+    "molotov_detonate":      "fire",
+    "inferno_startburn":     "fire",
+}
+_NADE_DURATIONS = {
+    "smoke": 1152,   # ~18 s × 64 hz
+    "flash":   96,   # ~1.5 s visual
+    "he":      48,   # ~0.75 s blast marker
+    "fire":   512,   # ~8 s fire
+}
+
+
+def extract_grenades(dem_path, ticks_by_round: dict) -> dict:
+    """
+    Returns {round_num: [{type, x, y, from_tick, to_tick}]}.
+    Requires dem_path for a second demoparser2 pass.
+    """
+    if not dem_path:
+        return {}
+
+    # Build per-round tick ranges so we can assign events to rounds
+    round_ranges = {}
+    for rnum, frames in ticks_by_round.items():
+        if frames:
+            ticks = [f["t"] for f in frames]
+            round_ranges[rnum] = (min(ticks), max(ticks))
+
+    def _tick_to_round(tick):
+        for rnum, (start, end) in round_ranges.items():
+            if start <= tick <= end + 1000:
+                return rnum
+        return None
+
+    result = {}
+    try:
+        from demoparser2 import DemoParser
+        parser = DemoParser(str(dem_path))
+
+        for event_name, nade_type in _NADE_EVENT_TYPE.items():
+            try:
+                result_list = parser.parse_events([event_name], other=["round_num"])
+                if not result_list:
+                    continue
+                # result_list is [(event_name, DataFrame), ...]
+                item = result_list[0]
+                df = item[1] if isinstance(item, tuple) else item
+                if df is None or df.empty:
+                    continue
+                cols = list(df.columns)
+                tick_col = next((c for c in ["tick"] if c in cols), None)
+                x_col    = next((c for c in ["x", "X"] if c in cols), None)
+                y_col    = next((c for c in ["y", "Y"] if c in cols), None)
+                rnum_col = "round_num" if "round_num" in cols else None
+                if not tick_col or not x_col or not y_col:
+                    log.debug("extract_grenades: %s missing pos columns — %s", event_name, cols)
+                    continue
+                duration = _NADE_DURATIONS[nade_type]
+                for _, row in df.iterrows():
+                    try:
+                        tick = int(row[tick_col])
+                        x    = float(row[x_col])
+                        y    = float(row[y_col])
+                        rnum = int(row[rnum_col]) if rnum_col else _tick_to_round(tick)
+                        if rnum is None:
+                            continue
+                        result.setdefault(int(rnum), []).append({
+                            "type":      nade_type,
+                            "x":         x,
+                            "y":         y,
+                            "from_tick": tick,
+                            "to_tick":   tick + duration,
+                        })
+                    except Exception:
+                        continue
+            except Exception as e:
+                log.debug("extract_grenades: event %s failed — %s", event_name, e)
+
+    except Exception as e:
+        log.warning("extract_grenades failed: %s", e)
+
+    total = sum(len(v) for v in result.values())
+    log.info("extract_grenades: %d grenades across %d rounds", total, len(result))
+    return result
+
+
+def extract_ticks(demo, dem_path=None) -> dict:
     """
     Returns {round_num: [{"t": tick, "p": [{"n": name, "x": x, "y": y, "hp": hp, "alive": bool, "side": side}]}]}
     Downsampled by TICK_SAMPLE for reasonable data size.
@@ -869,13 +891,31 @@ def extract_ticks(demo) -> dict:
         return {}
 
     cols = list(ticks_df.columns)
+    log.info("extract_ticks columns: %s", cols)
 
-    name_col  = next((c for c in ["name", "player_name", "steamid"] if c in cols), None)
-    x_col     = next((c for c in ["X", "x", "pos_x"] if c in cols), None)
-    y_col     = next((c for c in ["Y", "y", "pos_y"] if c in cols), None)
-    hp_col    = next((c for c in ["health", "hp", "Health"] if c in cols), None)
-    alive_col = next((c for c in ["is_alive", "alive", "isAlive"] if c in cols), None)
-    side_col  = next((c for c in ["side", "team_side", "Side"] if c in cols), None)
+    # Augment with armor/helmet via a second demoparser2 pass
+    if dem_path:
+        try:
+            from demoparser2 import DemoParser
+            armor_df = DemoParser(dem_path).parse_ticks(["armor_value", "has_helmet"])
+            if armor_df is not None:
+                merge_on = [c for c in ["tick", "steamid"] if c in armor_df.columns and c in ticks_df.columns]
+                extra    = [c for c in ["armor_value", "has_helmet"] if c in armor_df.columns]
+                if merge_on and extra:
+                    ticks_df = ticks_df.merge(armor_df[merge_on + extra], on=merge_on, how="left")
+                    cols = list(ticks_df.columns)
+                    log.info("extract_ticks columns after armor merge: %s", cols)
+        except Exception as e:
+            log.warning("extract_ticks: armor merge failed — %s", e)
+
+    name_col   = next((c for c in ["name", "player_name", "steamid"] if c in cols), None)
+    x_col      = next((c for c in ["X", "x", "pos_x"] if c in cols), None)
+    y_col      = next((c for c in ["Y", "y", "pos_y"] if c in cols), None)
+    hp_col     = next((c for c in ["health", "hp", "Health"] if c in cols), None)
+    alive_col  = next((c for c in ["is_alive", "alive", "isAlive"] if c in cols), None)
+    side_col   = next((c for c in ["side", "team_side", "Side"] if c in cols), None)
+    armor_col  = next((c for c in ["armor", "armor_value", "kevlar"] if c in cols), None)
+    helmet_col = next((c for c in ["has_helmet", "helmet"] if c in cols), None)
 
     if not (name_col and x_col and y_col and "tick" in cols and "round_num" in cols):
         log.warning("missing required tick columns — map tracker disabled")
@@ -911,13 +951,23 @@ def extract_ticks(demo) -> dict:
                     py = float(row[y_col]) if not pd.isna(row[y_col]) else 0.0
                 except Exception:
                     px = py = 0.0
+                try:
+                    armor = int(row[armor_col]) if armor_col and not pd.isna(row[armor_col]) else 0
+                except Exception:
+                    armor = 0
+                try:
+                    helmet = bool(row[helmet_col]) if helmet_col and not pd.isna(row[helmet_col]) else False
+                except Exception:
+                    helmet = False
                 players.append({
-                    "n":     str(row[name_col]),
-                    "x":     px,
-                    "y":     py,
-                    "hp":    hp,
-                    "alive": alive,
-                    "side":  str(row[side_col]) if side_col and not pd.isna(row.get(side_col, None)) else "?",
+                    "n":      str(row[name_col]),
+                    "x":      px,
+                    "y":      py,
+                    "hp":     hp,
+                    "alive":  alive,
+                    "side":   str(row[side_col]) if side_col and not pd.isna(row.get(side_col, None)) else "?",
+                    "armor":  armor,
+                    "helmet": helmet,
                 })
             frames.append({"t": int(tick_val), "p": players})
 
@@ -983,7 +1033,7 @@ def _build_item_lookups() -> tuple:
     return weapon_names, agent_names, agent_sides
 
 
-_WEAPON_NAMES, _AGENT_NAMES, _AGENT_SIDE_FROM_JSON = _build_item_lookups()
+_WEAPON_NAMES, _AGENT_NAMES, _AGENT_SIDE = _build_item_lookups()
 
 # Side each weapon def_index belongs to ('CT', 'T', or 'both')
 _WEAPON_SIDE: dict = {
@@ -1043,9 +1093,6 @@ _WEAPON_CLASS_TO_DEFIDX: dict = {
     "weapon_cz75a":         62,
     "weapon_revolver":      63,
 }
-
-# Side each agent def_index belongs to — built from agents.json at startup
-_AGENT_SIDE: dict = _AGENT_SIDE_FROM_JSON
 
 _WEAR_TIERS = [
     (0.07,  "Factory New"),
@@ -1112,11 +1159,6 @@ def extract_cosmetics(dem_path: str) -> list:
     except Exception as e:
         log.warning("extract_cosmetics parse failed: %s", e)
         return []
-
-    log.debug("parse_skins columns: %s", list(skins_df.columns))
-    def_cols = [c for c in skins_df.columns if "def" in c.lower()]
-    log.debug("parse_skins def-related columns: %s", def_cols)
-    log.debug("parse_skins sample:\n%s", skins_df.head().to_string())
 
     # ---- StatTrak: steamid -> {def_index -> count} ----
     stattrak: dict = {}
@@ -1251,9 +1293,6 @@ _HITGROUP = {
     "left_arm": "L Arm", "right_arm": "R Arm", "left_leg": "L Leg", "right_leg": "R Leg",
     "neck": "Neck", "gear": "Gear",
 }
-_HITGROUP_ORDER = ["Head", "Neck", "Chest", "Stomach", "L Arm", "R Arm", "L Leg", "R Leg", "Gear", "Generic"]
-
-
 def _calc_kast(kills: list, rounds: list) -> dict:
     """
     Returns {player_name: kast_pct} where KAST = % of rounds with a Kill,
@@ -1398,12 +1437,21 @@ def _extract_aim(kills: list, damages_df, rounds: list, shots_df=None) -> list:
     return result
 
 
+def _duration(h: dict) -> str:
+    try:
+        return f"{float(h['playback_time']):.1f}s"
+    except Exception:
+        try:
+            return f"{int(h['ticks_played']) / int(h['tick_rate']):.1f}s"
+        except Exception:
+            return "?"
+
+
 def parse_demo(dem_path: str) -> dict:
     from awpy import Demo
 
     demo = Demo(dem_path)
     demo.parse()
-
 
     # ---- Header ----
     h = demo.header or {}
@@ -1550,11 +1598,13 @@ def parse_demo(dem_path: str) -> dict:
 
     # ---- Tick data (player positions) ----
     session_id = str(uuid.uuid4())
-    ticks_by_round = extract_ticks(demo)
+    ticks_by_round    = extract_ticks(demo, dem_path)
+    grenades_by_round = extract_grenades(dem_path, ticks_by_round)
     if len(_session_cache) >= MAX_SESSIONS:
         _session_cache.popitem(last=False)
     _session_cache[session_id] = {
         "ticks":    ticks_by_round,
+        "grenades": grenades_by_round,
         "map_name": header["map"],
     }
 
@@ -1573,16 +1623,6 @@ def parse_demo(dem_path: str) -> dict:
         "session_id":     session_id,
         "has_ticks":      bool(ticks_by_round),
     }
-
-
-def _duration(h: dict) -> str:
-    try:
-        return f"{float(h['playback_time']):.1f}s"
-    except Exception:
-        try:
-            return f"{int(h['ticks_played']) / int(h['tick_rate']):.1f}s"
-        except Exception:
-            return "?"
 
 
 @app.route("/")
@@ -1612,8 +1652,10 @@ def api_parse():
     try:
         data = parse_demo(tmp_path)
         data["filename"] = f.filename
-        ticks = _session_cache.get(data["session_id"], {}).get("ticks", {})
-        _db_save(data["session_id"], f.filename, data["header"]["map"], data, ticks)
+        cached = _session_cache.get(data["session_id"], {})
+        ticks    = cached.get("ticks", {})
+        grenades = cached.get("grenades", {})
+        _db_save(data["session_id"], f.filename, data["header"]["map"], data, ticks, grenades)
         elapsed = time.monotonic() - _t0
         log.info("parse: completed %s — map=%s rounds=%s ticks=%s (%.2fs)",
                  f.filename, data["header"].get("map"),
@@ -1635,8 +1677,9 @@ def api_ticks(session_id, round_num):
     session = _session_cache.get(session_id)
     if not session:
         return jsonify({"error": "Session expired — please re-upload the demo"}), 404
-    frames = session["ticks"].get(round_num, [])
-    return jsonify({"frames": frames, "count": len(frames)})
+    frames   = session["ticks"].get(round_num, [])
+    grenades = session.get("grenades", {}).get(round_num, [])
+    return jsonify({"frames": frames, "count": len(frames), "grenades": grenades})
 
 
 @app.route("/api/map_info/<map_name>")
@@ -1695,14 +1738,6 @@ def api_demos_delete(demo_id):
     return jsonify({"error": "Demo not found"}), 404
 
 
-@app.route("/images/<table>/<path:filename>")
-def serve_cached_image(table, filename):
-    path = IMAGES_DIR / table / filename
-    if not path.exists():
-        return "", 404
-    return send_file(str(path))
-
-
 @app.route("/admin")
 def admin():
     return render_template("admin.html")
@@ -1714,7 +1749,6 @@ def api_admin_query():
     if not sql:
         return jsonify({"error": "No query provided"}), 400
     try:
-        import time
         con = sqlite3.connect(DB_PATH)
         con.row_factory = sqlite3.Row
         t0 = time.monotonic()
@@ -1754,8 +1788,6 @@ def api_admin_schema():
 
 
 _load_skin_names()
-
-threading.Thread(target=_cache_all_images, daemon=True, name="image-cache").start()
 
 log.info("startup complete — cs2demviewer ready")
 

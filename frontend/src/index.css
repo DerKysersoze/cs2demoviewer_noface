@@ -1,0 +1,191 @@
+/* ── Design tokens ─────────────────────────────────────────────────────────── */
+:root {
+  --bg:       #0d0d12;
+  --surface:  #16161f;
+  --surface2: #1e1e2e;
+  --border:   #2a2a3d;
+  --ct:       #38bdf8;
+  --t:        #fbbf24;
+  --green:    #4ade80;
+  --red:      #f87171;
+  --muted:    #6b7280;
+  --text:     #e2e8f0;
+  --radius:   10px;
+}
+
+/* ── Reset / base ──────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+a { color: inherit; text-decoration: none; }
+button { cursor: pointer; font: inherit; }
+input, textarea { font: inherit; }
+
+/* ── Site header ───────────────────────────────────────────────────────────── */
+.site-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: .02em;
+}
+.site-header span { color: var(--ct); }
+
+/* ── Shared table styles ───────────────────────────────────────────────────── */
+.table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  padding: 9px 12px;
+  text-align: left;
+  font-size: .75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+  background: var(--surface2);
+  white-space: nowrap;
+}
+thead th.sortable { cursor: pointer; user-select: none; }
+thead th.sortable:hover { color: var(--text); }
+thead th.sort-asc::after  { content: ' \25B2'; color: var(--ct); font-size: .65rem; }
+thead th.sort-desc::after { content: ' \25BC'; color: var(--ct); font-size: .65rem; }
+
+tbody td { padding: 8px 12px; }
+tbody tr { border-top: 1px solid var(--border); transition: background .1s; }
+tbody tr:hover { background: var(--surface2); }
+
+td.r, th.r { text-align: right; }
+
+/* ── Badges ────────────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 99px;
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .03em;
+}
+.badge-ct   { background: rgba(56,189,248,.15); color: var(--ct); }
+.badge-t    { background: rgba(251,191,36,.15);  color: var(--t); }
+.badge-note { background: var(--surface2); color: var(--muted); font-size: .68rem; }
+
+/* ── K/D colouring ─────────────────────────────────────────────────────────── */
+.kd-good { color: var(--green); }
+.kd-bad  { color: var(--red); }
+.kd-even { color: var(--text); }
+
+/* ── Weapon icon chips ─────────────────────────────────────────────────────── */
+.wpn-icon {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: #0d0d12;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 6px;
+  border: none;
+  font-size: .85rem;
+  font-weight: 600;
+  transition: opacity .15s;
+}
+.btn:hover { opacity: .85; }
+.btn-primary { background: var(--ct); color: #0d0d12; }
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  opacity: .7;
+}
+.btn-ghost:hover { opacity: 1; border-color: var(--muted); color: var(--text); }
+.btn-danger { background: rgba(248,113,113,.15); color: var(--red); border: 1px solid rgba(248,113,113,.3); }
+
+/* ── Tab bar ───────────────────────────────────────────────────────────────── */
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  overflow-x: auto;
+}
+.tab-btn {
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: .85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.tab-btn:hover  { color: var(--text); }
+.tab-btn.active { color: var(--ct); border-bottom-color: var(--ct); }
+
+/* ── Card / panel ──────────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+/* ── Progress bar ──────────────────────────────────────────────────────────── */
+.progress-bar-bg {
+  height: 6px;
+  background: var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--ct);
+  border-radius: 99px;
+  transition: width .2s;
+}
+
+/* ── Tooltip ───────────────────────────────────────────────────────────────── */
+[data-tip] { position: relative; cursor: default; }
+[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: .75rem;
+  padding: 6px 10px;
+  border-radius: 6px;
+  white-space: pre;
+  z-index: 100;
+  pointer-events: none;
+  max-width: 260px;
+}
+
+/* ── Utility ───────────────────────────────────────────────────────────────── */
+.muted { color: var(--muted); }
+.page-wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }

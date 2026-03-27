@@ -1,3 +1,4 @@
 awpy
 flask
 pandas
+rich
