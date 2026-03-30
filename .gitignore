@@ -20,3 +20,6 @@ tasks/
 
 # Local mockups (not synced)
 mockups/
+
+# Demo parse data (not synced)
+demo_parse_data/

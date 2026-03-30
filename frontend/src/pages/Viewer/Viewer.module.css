@@ -478,7 +478,7 @@
 }
 .eventFeedBody {
   overflow-y: auto;
-  max-height: 220px;
+  max-height: 140px;
   display: flex;
   flex-direction: column;
   padding: 4px 0;

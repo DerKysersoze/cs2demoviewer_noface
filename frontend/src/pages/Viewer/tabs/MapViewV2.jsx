@@ -152,20 +152,22 @@ function buildEventList(kills, grenades, events, roundNum) {
   return list.sort((a, b) => a.tick - b.tick)
 }
 
-const EventFeed = memo(function EventFeed({ kills, grenades, events, currentTick, roundNum, hasRound }) {
+const EventFeed = memo(function EventFeed({ kills, grenades, events, currentTick, roundNum, hasRound, style }) {
   const feedRef   = useRef(null)
   const allEvents = useMemo(
     () => buildEventList(kills, grenades, events, roundNum),
     [kills, grenades, events, roundNum]
   )
-  const visible = allEvents.filter(e => e.tick <= currentTick)
+  const visible = currentTick > 0
+    ? allEvents.filter(e => e.tick <= currentTick)
+    : allEvents
 
   useEffect(() => {
     if (feedRef.current) feedRef.current.scrollTop = feedRef.current.scrollHeight
   }, [visible.length])
 
   return (
-    <div className={styles.eventFeedPanel}>
+    <div className={styles.eventFeedPanel} style={style}>
       <div className={styles.eventFeedHeader}>Round Feed</div>
       <div className={styles.eventFeedBody} ref={feedRef}>
         {!hasRound && (
@@ -285,7 +287,9 @@ export default function MapViewV2({ demo, demoId }) {
       setFrames([])
       return
     }
-    console.log('tickData keys:', Object.keys(tickData), 'grenades:', tickData.grenades?.length)
+    const evtTypes = (tickData.events || []).map(e => e.type)
+    const buyCount = evtTypes.filter(t => t === 'buy').length
+    console.log('[MapViewV2] tickData — grenades:', tickData.grenades?.length, '| events total:', tickData.events?.length, '| buy:', buyCount, '| types:', [...new Set(evtTypes)])
     const f = tickData.frames || []
     setFrames(f)
     setGrenades(tickData.grenades || [])
@@ -352,107 +356,110 @@ export default function MapViewV2({ demo, demoId }) {
     : '—'
 
   return (
-    <div className={styles.mapLayoutV2}>
-
-      {/* ── Health bars (left) — V2: toggle-hide on rows, Live Status header ── */}
-      <PlayerHealthBars
-        frames={frames}
-        frame={frame}
-        scoreboard={scoreboard}
-        playerColorMap={playerColorMap}
-        hiddenPlayers={hiddenPlayers}
-        togglePlayer={togglePlayer}
+    <>
+      {/* ── Round feed — full-width above the map grid ── */}
+      <EventFeed
+        kills={demo.kills || []}
+        grenades={grenades}
+        events={roundEvents}
+        currentTick={currentTick}
+        roundNum={selectedRound ? parseInt(selectedRound) : null}
+        hasRound={!!selectedRound}
+        style={{ marginBottom: 16 }}
       />
 
-      {/* ── Canvas area ── */}
-      <div className={styles.mapCanvasWrapV2}>
-        <canvas ref={canvasRef} className={styles.mapCanvas} />
-        {overlay.show && (
-          <div className={styles.mapOverlay}>
-            <span className={styles.mapOverlayIcon}>{overlay.icon}</span>
-            <span className={styles.mapOverlayMsg}>{overlay.msg}</span>
-            {overlay.showDownload && (
-              <button className="btn" onClick={handleDownload} disabled={overlay.downloading}>
-                {overlay.downloading ? 'Downloading…' : 'Download Map Images (~100 MB)'}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      <div className={styles.mapLayoutV2}>
 
-      {/* ── Sidebar — V2: controls + event feed ── */}
-      <div className={styles.mapSidebar}>
-        <div className={styles.mapControls}>
-          <label className={styles.mapLabel}>Round</label>
-          <select
-            className={styles.mapSelect}
-            value={selectedRound}
-            onChange={handleRoundChange}
-            disabled={!demo.has_ticks}
-          >
-            <option value="">— select —</option>
-            {rounds.map(r => (
-              <option key={r.round_num} value={r.round_num}>
-                Round {r.round_num} — {r.reason}
-              </option>
-            ))}
-          </select>
+        {/* ── Health bars (left) — V2: toggle-hide on rows, Live Status header ── */}
+        <PlayerHealthBars
+          frames={frames}
+          frame={frame}
+          scoreboard={scoreboard}
+          playerColorMap={playerColorMap}
+          hiddenPlayers={hiddenPlayers}
+          togglePlayer={togglePlayer}
+        />
 
-          <label className={styles.mapLabel} style={{ marginTop: 8 }}>Playback</label>
-          <div className={styles.mapPlayback}>
-            <button
-              className="btn"
-              style={playing ? { background: 'var(--ct)', color: '#fff', borderColor: 'var(--ct)' } : {}}
-              onClick={() => { if (!frames.length) return; playing ? stopPlayback() : setPlaying(true) }}
-              disabled={!frames.length}
-            >
-              {playing ? '⏸ Pause' : '▶ Play'}
-            </button>
-            <select
-              className={styles.mapSelect}
-              style={{ flex: 1 }}
-              value={speed}
-              onChange={e => {
-                const s = parseFloat(e.target.value)
-                setSpeed(s)
-                if (playing) { stopPlayback(); setPlaying(true) }
-              }}
-            >
-              <option value="0.5">0.5×</option>
-              <option value="1">1×</option>
-              <option value="2">2×</option>
-              <option value="4">4×</option>
-            </select>
-          </div>
-
-          <input
-            type="range"
-            className={styles.mapScrubber}
-            min={0}
-            max={Math.max(0, frames.length - 1)}
-            value={frame}
-            onChange={e => { stopPlayback(); setFrame(parseInt(e.target.value)) }}
-            disabled={!frames.length}
-          />
-          <div className={styles.mapTickLabel}>{tickLabel}</div>
-          {grenades.length > 0 && (
-            <div className={styles.mapTickLabel} style={{ color: activeGrenades.length ? '#fbbf24' : 'var(--muted)' }}>
-              Nades: {grenades.length} total • {activeGrenades.length} active
+        {/* ── Canvas area ── */}
+        <div className={styles.mapCanvasWrapV2}>
+          <canvas ref={canvasRef} className={styles.mapCanvas} />
+          {overlay.show && (
+            <div className={styles.mapOverlay}>
+              <span className={styles.mapOverlayIcon}>{overlay.icon}</span>
+              <span className={styles.mapOverlayMsg}>{overlay.msg}</span>
+              {overlay.showDownload && (
+                <button className="btn" onClick={handleDownload} disabled={overlay.downloading}>
+                  {overlay.downloading ? 'Downloading…' : 'Download Map Images (~100 MB)'}
+                </button>
+              )}
             </div>
           )}
         </div>
 
-        <EventFeed
-          kills={demo.kills || []}
-          grenades={grenades}
-          events={roundEvents}
-          currentTick={currentTick}
-          roundNum={selectedRound ? parseInt(selectedRound) : null}
-          hasRound={!!selectedRound}
-        />
+        {/* ── Sidebar — V2: controls only ── */}
+        <div className={styles.mapSidebar}>
+          <div className={styles.mapControls}>
+            <label className={styles.mapLabel}>Round</label>
+            <select
+              className={styles.mapSelect}
+              value={selectedRound}
+              onChange={handleRoundChange}
+              disabled={!demo.has_ticks}
+            >
+              <option value="">— select —</option>
+              {rounds.map(r => (
+                <option key={r.round_num} value={r.round_num}>
+                  Round {r.round_num} — {r.reason}
+                </option>
+              ))}
+            </select>
+
+            <label className={styles.mapLabel} style={{ marginTop: 8 }}>Playback</label>
+            <div className={styles.mapPlayback}>
+              <button
+                className="btn"
+                style={playing ? { background: 'var(--ct)', color: '#fff', borderColor: 'var(--ct)' } : {}}
+                onClick={() => { if (!frames.length) return; playing ? stopPlayback() : setPlaying(true) }}
+                disabled={!frames.length}
+              >
+                {playing ? '⏸ Pause' : '▶ Play'}
+              </button>
+              <select
+                className={styles.mapSelect}
+                style={{ flex: 1 }}
+                value={speed}
+                onChange={e => {
+                  const s = parseFloat(e.target.value)
+                  setSpeed(s)
+                  if (playing) { stopPlayback(); setPlaying(true) }
+                }}
+              >
+                <option value="0.5">0.5×</option>
+                <option value="1">1×</option>
+                <option value="2">2×</option>
+                <option value="4">4×</option>
+              </select>
+            </div>
+
+            <input
+              type="range"
+              className={styles.mapScrubber}
+              min={0}
+              max={Math.max(0, frames.length - 1)}
+              value={frame}
+              onChange={e => { stopPlayback(); setFrame(parseInt(e.target.value)) }}
+              disabled={!frames.length}
+            />
+            <div className={styles.mapTickLabel}>{tickLabel}</div>
+            {grenades.length > 0 && (
+              <div className={styles.mapTickLabel} style={{ color: activeGrenades.length ? '#fbbf24' : 'var(--muted)' }}>
+                Nades: {grenades.length} total • {activeGrenades.length} active
+              </div>
+            )}
+          </div>
+        </div>
 
       </div>
-
-    </div>
+    </>
   )
 }

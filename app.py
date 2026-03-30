@@ -280,21 +280,11 @@ CREATE TABLE IF NOT EXISTS demo_aim_hitgroups (
 );
 CREATE INDEX IF NOT EXISTS idx_demo_aim_hitgroups_demo_id ON demo_aim_hitgroups(demo_id);
 
-CREATE TABLE IF NOT EXISTS demo_ticks (
-    demo_id    TEXT PRIMARY KEY,
-    ticks_data BLOB NOT NULL,
-    FOREIGN KEY (demo_id) REFERENCES demos(id)
-);
-
-CREATE TABLE IF NOT EXISTS demo_grenades (
-    demo_id        TEXT PRIMARY KEY,
-    grenades_data  BLOB NOT NULL,
-    FOREIGN KEY (demo_id) REFERENCES demos(id)
-);
-
-CREATE TABLE IF NOT EXISTS demo_events (
-    demo_id      TEXT PRIMARY KEY,
-    events_data  BLOB NOT NULL,
+CREATE TABLE IF NOT EXISTS demo_data_blobs (
+    demo_id       TEXT PRIMARY KEY,
+    ticks_data    BLOB,
+    grenades_data BLOB,
+    events_data   BLOB,
     FOREIGN KEY (demo_id) REFERENCES demos(id)
 );
 """
@@ -562,28 +552,18 @@ def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
                  for hg, cnt in hit_groups.items()],
             )
 
-    # ---- demo_ticks ----
-    con.execute("DELETE FROM demo_ticks WHERE demo_id = ?", (demo_id,))
-    if ticks_by_round:
+    # ---- demo_data_blobs ----
+    con.execute("DELETE FROM demo_data_blobs WHERE demo_id = ?", (demo_id,))
+    if ticks_by_round or grenades_by_round or events_by_round:
         con.execute(
-            "INSERT INTO demo_ticks (demo_id, ticks_data) VALUES (?,?)",
-            (demo_id, _blob(ticks_by_round)),
-        )
-
-    # ---- demo_grenades ----
-    con.execute("DELETE FROM demo_grenades WHERE demo_id = ?", (demo_id,))
-    if grenades_by_round:
-        con.execute(
-            "INSERT INTO demo_grenades (demo_id, grenades_data) VALUES (?,?)",
-            (demo_id, _blob(grenades_by_round)),
-        )
-
-    # ---- demo_events ----
-    con.execute("DELETE FROM demo_events WHERE demo_id = ?", (demo_id,))
-    if events_by_round:
-        con.execute(
-            "INSERT INTO demo_events (demo_id, events_data) VALUES (?,?)",
-            (demo_id, _blob(events_by_round)),
+            "INSERT INTO demo_data_blobs (demo_id, ticks_data, grenades_data, events_data)"
+            " VALUES (?,?,?,?)",
+            (
+                demo_id,
+                _blob(ticks_by_round)    if ticks_by_round    else None,
+                _blob(grenades_by_round) if grenades_by_round else None,
+                _blob(events_by_round)   if events_by_round   else None,
+            ),
         )
 
     # ---- demo_cosmetics ----
@@ -637,14 +617,8 @@ def _db_get(demo_id: str):
     cosmetic_rows  = con.execute(
         "SELECT * FROM demo_cosmetics WHERE demo_id = ? ORDER BY id", (demo_id,)
     ).fetchall()
-    ticks_row      = con.execute(
-        "SELECT ticks_data FROM demo_ticks WHERE demo_id = ?", (demo_id,)
-    ).fetchone()
-    grenades_row   = con.execute(
-        "SELECT grenades_data FROM demo_grenades WHERE demo_id = ?", (demo_id,)
-    ).fetchone()
-    events_row     = con.execute(
-        "SELECT events_data FROM demo_events WHERE demo_id = ?", (demo_id,)
+    blob_row       = con.execute(
+        "SELECT ticks_data, grenades_data, events_data FROM demo_data_blobs WHERE demo_id = ?", (demo_id,)
     ).fetchone()
     con.close()
 
@@ -723,14 +697,10 @@ def _db_get(demo_id: str):
         "swag_breakdown": _cosmetics_to_swag(cosmetic_rows),
     }
 
-    if ticks_row and ticks_row["ticks_data"]:
-        ticks_by_round = {int(k): v for k, v in _unblob(ticks_row["ticks_data"]).items()}
-        grenades_by_round = {}
-        if grenades_row and grenades_row["grenades_data"]:
-            grenades_by_round = {int(k): v for k, v in _unblob(grenades_row["grenades_data"]).items()}
-        events_by_round = {}
-        if events_row and events_row["events_data"]:
-            events_by_round = {int(k): v for k, v in _unblob(events_row["events_data"]).items()}
+    if blob_row and blob_row["ticks_data"]:
+        ticks_by_round    = {int(k): v for k, v in _unblob(blob_row["ticks_data"]).items()}
+        grenades_by_round = {int(k): v for k, v in _unblob(blob_row["grenades_data"]).items()} if blob_row["grenades_data"] else {}
+        events_by_round   = {int(k): v for k, v in _unblob(blob_row["events_data"]).items()}   if blob_row["events_data"]   else {}
         if len(_session_cache) >= MAX_SESSIONS:
             _session_cache.popitem(last=False)
         _session_cache[demo_id] = {
@@ -747,7 +717,7 @@ def _db_get(demo_id: str):
 def _db_delete(demo_id: str) -> bool:
     con = sqlite3.connect(DB_PATH)
     for tbl in ("demo_rounds", "demo_kills", "demo_scoreboard", "demo_aim",
-                "demo_aim_weapons", "demo_aim_hitgroups", "demo_ticks", "demo_grenades", "demo_events", "demo_cosmetics"):
+                "demo_aim_weapons", "demo_aim_hitgroups", "demo_data_blobs", "demo_cosmetics"):
         con.execute(f"DELETE FROM {tbl} WHERE demo_id = ?", (demo_id,))
     cur = con.execute("DELETE FROM demos WHERE id = ?", (demo_id,))
     con.commit()
@@ -950,6 +920,135 @@ _BUY_ITEM_NAMES = {
     "weapon_decoy":         "Decoy Grenade",
 }
 
+# Items that are never purchased — filter these out of item_pickup events
+_NON_PURCHASE_ITEMS = {
+    "knife", "knife_t", "knife_ct", "knife_ghost",
+    "c4", "healthshot", "taser",
+    "glock", "hkp2000", "usp_silencer",  # default pistols given free at round start
+}
+
+def _extract_buy_from_item_pickup(parser, round_ranges: dict) -> dict:
+    """
+    Primary buy-event fallback using item_pickup events.
+    item_pickup fires for every item a player receives — purchases, floor picks, spawns.
+    We filter to purchases by:
+      1. Excluding silent=True pickups (round-start loadout equips)
+      2. Excluding known non-purchasable items (knife, c4, default pistols)
+      3. Cross-referencing with cash_spent_this_round tick data: a pickup is a
+         purchase if cash_spent increased at/near the same tick for that player.
+    Returns {round_num: [{type, tick, player, item}]}.
+    """
+    import pandas as pd
+
+    result = {}
+    try:
+        # ── Parse item_pickup events ──────────────────────────────────────────
+        rows = parser.parse_events(["item_pickup"])
+        if not rows:
+            return {}
+        raw = rows[0]
+        pickup_df = raw[1] if isinstance(raw, tuple) else raw
+        if pickup_df is None or pickup_df.empty:
+            return {}
+
+        cols = list(pickup_df.columns)
+        name_col  = next((c for c in ["user_name", "player_name", "name"] if c in cols), None)
+        item_col  = next((c for c in ["item", "weapon", "weapon_name"] if c in cols), None)
+        rnum_col  = "round_num" if "round_num" in cols else None
+        silent_col = "silent" if "silent" in cols else None
+
+        if not name_col or not item_col:
+            log.info("_extract_buy_from_item_pickup: missing name/item cols — %s", cols)
+            return {}
+
+        # Filter: drop silent equips and non-purchasable items
+        if silent_col:
+            pickup_df = pickup_df[pickup_df[silent_col] == False]  # noqa: E712
+        pickup_df = pickup_df[~pickup_df[item_col].isin(_NON_PURCHASE_ITEMS)]
+
+        if pickup_df.empty:
+            return {}
+
+        # ── Parse cash_spent_this_round ticks to confirm purchases ────────────
+        # Build a set of (player, tick) where cash_spent increased — these are buys
+        purchase_ticks: set[tuple] = set()
+        try:
+            tdf = parser.parse_ticks(["cash_spent_this_round"])
+            if tdf is not None and not tdf.empty:
+                tcols    = list(tdf.columns)
+                tname_col = next((c for c in ["name", "player_name", "user_name"] if c in tcols), None)
+                if tname_col and "cash_spent_this_round" in tcols:
+                    for player, pdf in tdf.groupby(tname_col):
+                        pdf = pdf.sort_values("tick")
+                        prev_spent = None
+                        prev_rnum  = None
+                        for _, trow in pdf.iterrows():
+                            try:
+                                spent = int(trow["cash_spent_this_round"]) if pd.notna(trow["cash_spent_this_round"]) else 0
+                                rnum  = int(trow["round_num"]) if "round_num" in tcols and pd.notna(trow.get("round_num")) else None
+                            except (ValueError, TypeError):
+                                continue
+                            if prev_spent is None or (rnum != prev_rnum and spent < prev_spent):
+                                prev_spent = spent
+                                prev_rnum  = rnum
+                                continue
+                            if spent > prev_spent:
+                                # Cash increased — record this tick ±64 ticks as a purchase window
+                                tick = int(trow["tick"])
+                                for dt in range(-64, 65):
+                                    purchase_ticks.add((str(player), tick + dt))
+                            prev_spent = spent
+                            prev_rnum  = rnum
+        except Exception as e:
+            log.debug("_extract_buy_from_item_pickup: cash tick parse failed — %s", e)
+
+        # ── Assign each pickup to a round ─────────────────────────────────────
+        def _tick_to_round(tick):
+            for rnum, (start, end) in round_ranges.items():
+                if start - 5000 <= tick <= end + 1000:
+                    return rnum
+            return None
+
+        for _, row in pickup_df.iterrows():
+            try:
+                tick   = int(row["tick"])
+                player = str(row[name_col])
+                raw_item = str(row[item_col]).lower()
+
+                # If we have cash data, only include confirmed purchases
+                if purchase_ticks and (player, tick) not in purchase_ticks:
+                    continue
+
+                rnum = int(row[rnum_col]) if rnum_col and pd.notna(row.get(rnum_col)) else _tick_to_round(tick)
+                if rnum is None:
+                    continue
+
+                display = _BUY_ITEM_NAMES.get(
+                    f"weapon_{raw_item}",
+                    _BUY_ITEM_NAMES.get(
+                        f"item_{raw_item}",
+                        _BUY_ITEM_NAMES.get(
+                            raw_item,
+                            raw_item.replace("_", " ").title()
+                        )
+                    )
+                )
+
+                result.setdefault(int(rnum), []).append({
+                    "type":   "buy",
+                    "tick":   tick,
+                    "player": player,
+                    "item":   display,
+                })
+            except Exception as _row_e:
+                log.debug("_extract_buy_from_item_pickup: row error — %s", _row_e)
+                continue
+
+    except Exception as e:
+        log.warning("_extract_buy_from_item_pickup failed: %s", e)
+
+    return result
+
 
 def extract_events(dem_path, ticks_by_round: dict) -> dict:
     """
@@ -982,37 +1081,64 @@ def extract_events(dem_path, ticks_by_round: dict) -> dict:
 
         # ---- Buy events ----
         try:
-            rows = parser.parse_events(["player_buy"], other=["round_num"])
-            if rows:
-                item = rows[0]
-                df = item[1] if isinstance(item, tuple) else item
-                if df is not None and not df.empty:
-                    cols = list(df.columns)
-                    log.debug("extract_events player_buy columns: %s", cols)
-                    name_col = next((c for c in ["user_name", "player_name", "name"] if c in cols), None)
-                    item_col = next((c for c in ["weapon", "item", "weaponItemId", "weapon_name"] if c in cols), None)
-                    rnum_col = "round_num" if "round_num" in cols else None
-                    for _, row in df.iterrows():
-                        try:
-                            tick  = int(row["tick"])
-                            rnum  = int(row[rnum_col]) if rnum_col else _tick_to_round(tick, buy_phase=True)
-                            if rnum is None:
-                                rnum = _tick_to_round(tick, buy_phase=True)
-                            if rnum is None:
-                                continue
-                            raw_item = str(row[item_col]).lower() if item_col else ""
-                            display  = _BUY_ITEM_NAMES.get(raw_item, raw_item.replace("weapon_", "").replace("item_", "").replace("_", " ").title())
-                            player   = str(row[name_col]) if name_col else "?"
-                            result.setdefault(int(rnum), []).append({
-                                "type":   "buy",
-                                "tick":   tick,
-                                "player": player,
-                                "item":   display,
-                            })
-                        except Exception:
+            _rows = parser.parse_events(["player_buy"])
+            buy_df = None
+            if _rows:
+                _item = _rows[0]
+                buy_df = _item[1] if isinstance(_item, tuple) else _item
+
+            if buy_df is None or buy_df.empty:
+                log.info("extract_events: player_buy returned no data — falling back to item_pickup")
+                _buy_from_pickup = _extract_buy_from_item_pickup(parser, round_ranges)
+                for rnum, evts in _buy_from_pickup.items():
+                    result.setdefault(rnum, []).extend(evts)
+                log.info("extract_events: item_pickup fallback added %d buy events across %d rounds",
+                         sum(len(v) for v in _buy_from_pickup.values()), len(_buy_from_pickup))
+            else:
+                cols     = list(buy_df.columns)
+                name_col = next((c for c in ["user_name", "player_name", "name"] if c in cols), None)
+                item_col = next((c for c in [
+                    "weapon", "item", "weaponItemId", "weapon_name", "weapon_id",
+                    "weaponId", "item_name", "defindex", "wep_type",
+                ] if c in cols), None)
+                if item_col is None:
+                    skip_cols = {"tick", "name", "player_name", "user_name", "steamid", "round_num"}
+                    candidates = [c for c in cols if c not in skip_cols]
+                    item_col = candidates[0] if candidates else None
+                rnum_col = "round_num" if "round_num" in cols else None
+                log.info("extract_events: player_buy %d rows — name_col=%s item_col=%s rnum_col=%s cols=%s",
+                         len(buy_df), name_col, item_col, rnum_col, cols)
+                skipped = 0
+                for _, row in buy_df.iterrows():
+                    try:
+                        tick = int(row["tick"])
+                        rnum = None
+                        if rnum_col:
+                            try:
+                                rnum = int(row[rnum_col])
+                            except (ValueError, TypeError):
+                                pass
+                        if rnum is None:
+                            rnum = _tick_to_round(tick, buy_phase=True)
+                        if rnum is None:
+                            skipped += 1
                             continue
+                        raw_item = str(row[item_col]).lower() if item_col else ""
+                        display  = _BUY_ITEM_NAMES.get(raw_item, raw_item.replace("weapon_", "").replace("item_", "").replace("_", " ").title())
+                        player   = str(row[name_col]) if name_col else "?"
+                        result.setdefault(int(rnum), []).append({
+                            "type":   "buy",
+                            "tick":   tick,
+                            "player": player,
+                            "item":   display,
+                        })
+                    except Exception as _row_e:
+                        log.warning("extract_events: buy row error — %s", _row_e)
+                        skipped += 1
+                buy_total = sum(1 for evts in result.values() for e in evts if e["type"] == "buy")
+                log.info("extract_events: player_buy added %d events, skipped %d rows", buy_total, skipped)
         except Exception as e:
-            log.debug("extract_events: player_buy failed — %s", e)
+            log.warning("extract_events: player_buy failed — %s", e)
 
         # ---- Bomb planted ----
         try:
