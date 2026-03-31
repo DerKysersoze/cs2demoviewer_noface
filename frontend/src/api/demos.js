@@ -11,6 +11,7 @@ async function handleResponse(res) {
 export const demosApi = {
   list:   ()     => fetch(`${BASE}/demos`).then(handleResponse),
   get:    (id)   => fetch(`${BASE}/demos/${id}`).then(handleResponse),
+  getLoadout: (id) => fetch(`${BASE}/demos/${id}/loadout`).then(handleResponse),
   delete: (id)   => fetch(`${BASE}/demos/${id}`, { method: 'DELETE' }).then(handleResponse),
   parse:  (formData, onProgress) => new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()

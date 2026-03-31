@@ -2108,6 +2108,123 @@ def api_demos_get(demo_id):
     return jsonify(data)
 
 
+@app.route("/api/demos/<demo_id>/loadout")
+def api_demos_loadout(demo_id):
+    """Get player loadout data for a demo."""
+    data = _db_get(demo_id)
+    if data is None:
+        return jsonify({"error": "Demo not found"}), 404
+    
+    # Extract loadout information from the demo data
+    loadout_data = {
+        "demo_id": demo_id,
+        "map": data.get("header", {}).get("map", "Unknown Map"),
+        "filename": data.get("filename", "Unknown Demo"),
+        "players": []
+    }
+    
+    # Connect to database to get cosmetics data
+    con = get_db_connection()
+    
+    try:
+        # Get all cosmetics for this demo
+        cosmetics = con.execute(
+            "SELECT * FROM demo_cosmetics WHERE demo_id = ? ORDER BY steamid, player_name",
+            (demo_id,)
+        ).fetchall()
+        
+        # Group cosmetics by player
+        player_cosmetics = {}
+        for cosmetic in cosmetics:
+            key = (cosmetic["steamid"], cosmetic["player_name"])
+            if key not in player_cosmetics:
+                player_cosmetics[key] = {
+                    "name": cosmetic["player_name"],
+                    "steamid": cosmetic["steamid"],
+                    "team": cosmetic["team"],
+                    "kills": 0,
+                    "deaths": 0,
+                    "assists": 0,
+                    "kd_ratio": 0.0,
+                    "headshot_pct": 0.0,
+                    "total_damage": 0,
+                    "weapons": [],
+                    "agent": None,
+                    "skins": []
+                }
+            
+            p = player_cosmetics[key]
+            
+            # Add scoreboard data if available
+            if data.get("scoreboard"):
+                for scoreboard_player in data["scoreboard"]:
+                    if scoreboard_player["name"] == cosmetic["player_name"] and scoreboard_player["steamid"] == cosmetic["steamid"]:
+                        p["kills"] = scoreboard_player.get("kills", 0)
+                        p["deaths"] = scoreboard_player.get("deaths", 0)
+                        p["assists"] = scoreboard_player.get("assists", 0)
+                        p["kd_ratio"] = scoreboard_player.get("kd", 0.0)
+                        p["headshot_pct"] = scoreboard_player.get("hs_pct", 0.0)
+                        p["total_damage"] = scoreboard_player.get("dmg", 0)
+            
+            # Process cosmetics
+            if cosmetic["is_agent"]:
+                p["agent"] = {
+                    "def_index": cosmetic["def_index"],
+                    "item_name": cosmetic["item_name"],
+                    "skin_name": cosmetic["skin_name"],
+                    "paint_index": cosmetic["paint_index"],
+                    "paint_seed": cosmetic["paint_seed"],
+                    "wear": cosmetic["wear"],
+                    "wear_tier": cosmetic["wear_tier"],
+                    "custom_name": cosmetic["custom_name"],
+                    "stattrak": cosmetic["stattrak"],
+                    "side": cosmetic["side"]
+                }
+            else:
+                # Add to skins list
+                p["skins"].append({
+                    "def_index": cosmetic["def_index"],
+                    "item_name": cosmetic["item_name"],
+                    "skin_name": cosmetic["skin_name"],
+                    "paint_index": cosmetic["paint_index"],
+                    "paint_seed": cosmetic["paint_seed"],
+                    "wear": cosmetic["wear"],
+                    "wear_tier": cosmetic["wear_tier"],
+                    "custom_name": cosmetic["custom_name"],
+                    "stattrak": cosmetic["stattrak"],
+                    "side": cosmetic["side"]
+                })
+        
+        # Convert to list for JSON serialization
+        loadout_data["players"] = list(player_cosmetics.values())
+        
+        # Add weapon stats from aim breakdown if available
+        if data.get("aim_breakdown"):
+            for aim_player in data["aim_breakdown"]:
+                key = (None, aim_player["name"])  # Use name as key for lookup
+                for player in loadout_data["players"]:
+                    if player["name"] == aim_player["name"]:
+                        # Add weapon stats from aim breakdown
+                        if aim_player.get("weapons"):
+                            for weapon in aim_player["weapons"]:
+                                player["weapons"].append({
+                                    "weapon": weapon["weapon"],
+                                    "kills": weapon.get("kills", 0),
+                                    "shots": weapon.get("shots", 0),
+                                    "hits": weapon.get("hits", 0),
+                                    "dmg": weapon.get("dmg", 0),
+                                    "hs_kills": weapon.get("hs_kills", 0)
+                                })
+        
+    except Exception as e:
+        log.error(f"Error in loadout API: {e}")
+        return jsonify({"error": "Failed to process loadout data"}), 500
+    finally:
+        con.close()
+    
+    return jsonify(loadout_data)
+
+
 @app.route("/api/demos/<demo_id>", methods=["DELETE"])
 def api_demos_delete(demo_id):
     if _db_delete(demo_id):

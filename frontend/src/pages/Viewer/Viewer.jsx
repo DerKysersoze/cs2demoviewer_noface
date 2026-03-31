@@ -73,7 +73,8 @@ export default function Viewer() {
     </>
   )
 
-  const d = data
+  // Ensure data structure is valid
+  const d = data || {}
   const h = d.header || {}
 
   return (
@@ -111,6 +112,11 @@ export default function Viewer() {
                 <strong>{k}:</strong> {v}
               </div>
             ))}
+          </div>
+          <div className={styles.loadoutLink}>
+            <Link to={`/loadout/${id}`} className={styles.loadoutButton}>
+              View Loadout
+            </Link>
           </div>
         </div>
 

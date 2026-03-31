@@ -33,6 +33,29 @@
 }
 .pill strong { color: var(--text); }
 
+.loadoutLink {
+  text-align: center;
+  margin-top: 15px;
+}
+
+.loadoutButton {
+  display: inline-block;
+  padding: 10px 20px;
+  background: linear-gradient(45deg, #00a8ff, #00d2d3);
+  color: white;
+  text-decoration: none;
+  border-radius: 5px;
+  font-weight: bold;
+  transition: all 0.3s ease;
+  border: none;
+  cursor: pointer;
+}
+
+.loadoutButton:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 168, 255, 0.3);
+}
+
 /* ── Tab bar ── */
 .tabs {
   display: flex;
