@@ -1022,6 +1022,10 @@ def _extract_buy_from_item_pickup(parser, round_ranges: dict) -> dict:
                 rnum = int(row[rnum_col]) if rnum_col and pd.notna(row.get(rnum_col)) else _tick_to_round(tick)
                 if rnum is None:
                     continue
+                # Reject pickups beyond the round's last frame tick (next-round bleed)
+                _rstart, _rend = round_ranges.get(rnum, (0, 0))
+                if tick > _rend:
+                    continue
 
                 display = _BUY_ITEM_NAMES.get(
                     f"weapon_{raw_item}",
@@ -1088,12 +1092,60 @@ def extract_events(dem_path, ticks_by_round: dict) -> dict:
                 buy_df = _item[1] if isinstance(_item, tuple) else _item
 
             if buy_df is None or buy_df.empty:
-                log.info("extract_events: player_buy returned no data — falling back to item_pickup")
-                _buy_from_pickup = _extract_buy_from_item_pickup(parser, round_ranges)
-                for rnum, evts in _buy_from_pickup.items():
-                    result.setdefault(rnum, []).extend(evts)
-                log.info("extract_events: item_pickup fallback added %d buy events across %d rounds",
-                         sum(len(v) for v in _buy_from_pickup.values()), len(_buy_from_pickup))
+                # CS2 demos use 'item_purchase' instead of 'player_buy'
+                _item_purchase_df = None
+                try:
+                    _ip_rows = parser.parse_events(["item_purchase"])
+                    if _ip_rows:
+                        _ip_item = _ip_rows[0]
+                        _item_purchase_df = _ip_item[1] if isinstance(_ip_item, tuple) else _ip_item
+                except Exception as _ip_e:
+                    log.debug("extract_events: item_purchase parse failed — %s", _ip_e)
+
+                if _item_purchase_df is not None and not _item_purchase_df.empty:
+                    _ip_cols = list(_item_purchase_df.columns)
+                    log.info("extract_events: item_purchase — %d rows, cols=%s", len(_item_purchase_df), _ip_cols)
+                    _ip_skipped = 0
+                    for _, _ip_row in _item_purchase_df.iterrows():
+                        try:
+                            # Skip items that were sold back
+                            if "was_sold" in _ip_cols and _ip_row.get("was_sold"):
+                                continue
+                            _ip_tick   = int(_ip_row["tick"])
+                            _ip_player = str(_ip_row["name"]) if "name" in _ip_cols else "?"
+                            _ip_raw    = str(_ip_row["item_name"]).lower() if "item_name" in _ip_cols else ""
+                            _ip_rnum   = _tick_to_round(_ip_tick, buy_phase=True)
+                            if _ip_rnum is None:
+                                _ip_skipped += 1
+                                continue
+                            # Reject buys whose tick exceeds the round's last frame — these
+                            # are next-round freeze-phase buys captured by the +1000 tolerance.
+                            _rstart, _rend = round_ranges.get(_ip_rnum, (0, 0))
+                            if _ip_tick > _rend:
+                                _ip_skipped += 1
+                                continue
+                            _ip_display = _BUY_ITEM_NAMES.get(
+                                _ip_raw,
+                                _ip_raw.replace("weapon_", "").replace("item_", "").replace("_", " ").title()
+                            )
+                            result.setdefault(int(_ip_rnum), []).append({
+                                "type":   "buy",
+                                "tick":   _ip_tick,
+                                "player": _ip_player,
+                                "item":   _ip_display,
+                            })
+                        except Exception as _ip_row_e:
+                            log.debug("extract_events: item_purchase row error — %s", _ip_row_e)
+                            _ip_skipped += 1
+                    _ip_total = sum(1 for evts in result.values() for e in evts if e["type"] == "buy")
+                    log.info("extract_events: item_purchase added %d events, skipped %d rows", _ip_total, _ip_skipped)
+                else:
+                    log.info("extract_events: player_buy/item_purchase returned no data — falling back to item_pickup")
+                    _buy_from_pickup = _extract_buy_from_item_pickup(parser, round_ranges)
+                    for rnum, evts in _buy_from_pickup.items():
+                        result.setdefault(rnum, []).extend(evts)
+                    log.info("extract_events: item_pickup fallback added %d buy events across %d rounds",
+                             sum(len(v) for v in _buy_from_pickup.values()), len(_buy_from_pickup))
             else:
                 cols     = list(buy_df.columns)
                 name_col = next((c for c in ["user_name", "player_name", "name"] if c in cols), None)
