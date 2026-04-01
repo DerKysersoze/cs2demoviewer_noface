@@ -85,6 +85,49 @@
   background: linear-gradient(45deg, #ff6b6b, #ff8e8e);
 }
 
+.sideToggle {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.sideBtn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  background: transparent;
+  color: #a0a0c0;
+  transition: all 0.15s;
+}
+
+.sideBtn.activeCT {
+  background: rgba(0, 168, 255, 0.2);
+  color: #00d2d3;
+}
+
+.sideBtn.activeT {
+  background: rgba(255, 107, 107, 0.2);
+  color: #ff8e8e;
+}
+
+.bothBadge {
+  font-size: 0.65rem;
+  color: #a0a0c0;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-top: 4px;
+  display: inline-block;
+}
+
 .statsGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -268,6 +311,20 @@
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.agentImageImg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.skinImageImg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .skinItemName {

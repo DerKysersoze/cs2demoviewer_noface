@@ -17,7 +17,7 @@ import uuid
 from collections import OrderedDict
 from pathlib import Path
 
-from flask import Flask, g, jsonify, render_template, request, send_file
+from flask import Flask, g, jsonify, render_template, request, send_file, send_from_directory
 
 # ── Logging setup ──────────────────────────────────────────────────────────────
 # Enabled only when launched with --verbose.
@@ -1484,12 +1484,13 @@ def _wear_tier(f: float) -> str:
 
 
 _SKIN_NAMES: dict = {}
+_SKIN_IDS:   dict = {}   # paint_index (str) -> skin id (e.g. "skin-f64cdaac0b90")
 _SKIN_NAMES_LOADED = False
 
 
 def _load_skin_names() -> dict:
-    """Build paint_index -> skin name dict from struct_db/skins.json."""
-    global _SKIN_NAMES, _SKIN_NAMES_LOADED
+    """Build paint_index -> skin name and paint_index -> skin id dicts from struct_db/skins.json."""
+    global _SKIN_NAMES, _SKIN_IDS, _SKIN_NAMES_LOADED
     if _SKIN_NAMES_LOADED:
         return _SKIN_NAMES
     _SKIN_NAMES_LOADED = True
@@ -1502,15 +1503,23 @@ def _load_skin_names() -> dict:
             skins = json.load(f)
         def _strip_prefix(name: str) -> str:
             return name.split(" | ", 1)[-1] if name and " | " in name else name
-        _SKIN_NAMES = {
-            str(item["paint_index"]): _strip_prefix(item.get("name", ""))
-            for item in skins
-            if isinstance(item, dict) and item.get("paint_index")
-        }
+        _SKIN_NAMES = {}
+        _SKIN_IDS   = {}
+        for item in skins:
+            if not isinstance(item, dict) or not item.get("paint_index"):
+                continue
+            pi         = str(item["paint_index"])
+            weapon_id  = str(item.get("weapon", {}).get("weapon_id", ""))
+            _SKIN_NAMES[pi] = _strip_prefix(item.get("name", ""))
+            if item.get("id"):
+                # Key by (paint_index, weapon_id) to avoid collisions where the
+                # same paint design exists on multiple weapon types (113 such cases).
+                _SKIN_IDS[f"{pi}:{weapon_id}"] = item["id"]
         log.info("skin names: loaded %d entries from skins.json", len(_SKIN_NAMES))
     except Exception as e:
         log.warning("skin names: failed to load from skins.json: %s", e)
         _SKIN_NAMES = {}
+        _SKIN_IDS   = {}
     return _SKIN_NAMES
 
 
@@ -2084,6 +2093,12 @@ def api_download_maps():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/images/<path:filename>")
+def serve_image(filename):
+    images_dir = Path(__file__).parent / "images"
+    return send_from_directory(str(images_dir), filename)
+
+
 @app.route("/api/map_image/<map_name>")
 def api_map_image(map_name):
     import awpy.data
@@ -2193,7 +2208,8 @@ def api_demos_loadout(demo_id):
                     "wear_tier": cosmetic["wear_tier"],
                     "custom_name": cosmetic["custom_name"],
                     "stattrak": cosmetic["stattrak"],
-                    "side": cosmetic["side"]
+                    "side": cosmetic["side"],
+                    "skin_image_id": _SKIN_IDS.get(f"{cosmetic['paint_index']}:{cosmetic['def_index']}") if cosmetic["paint_index"] else None,
                 })
         
         # Convert to list for JSON serialization

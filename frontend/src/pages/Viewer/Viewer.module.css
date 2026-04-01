@@ -501,13 +501,14 @@
 }
 .eventFeedBody {
   overflow-y: auto;
-  max-height: 140px;
+  height: 140px;
   display: flex;
   flex-direction: column;
   padding: 4px 0;
 }
 .eventFeedEmpty {
   padding: 12px;
+  height: 140px;
   font-size: .72rem;
   color: var(--muted);
   text-align: center;

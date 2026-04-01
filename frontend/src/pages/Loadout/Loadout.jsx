@@ -6,6 +6,36 @@ import SiteHeader from '../../components/SiteHeader'
 import WeaponIcon from '../../components/WeaponIcon'
 import styles from './Loadout.module.css'
 
+function AgentImage({ defIndex, name }) {
+  const [errored, setErrored] = useState(false)
+  if (defIndex && !errored) {
+    return (
+      <img
+        src={`/images/agents/agent-${defIndex}.png`}
+        alt={name}
+        className={styles.agentImageImg}
+        onError={() => setErrored(true)}
+      />
+    )
+  }
+  return <span className={styles.placeholderImage}>👤</span>
+}
+
+function SkinImage({ skin }) {
+  const [errored, setErrored] = useState(false)
+  if (skin.skin_image_id && !errored) {
+    return (
+      <img
+        src={`/images/skins/${skin.skin_image_id}.png`}
+        alt={skin.skin_name || skin.item_name}
+        className={styles.skinImageImg}
+        onError={() => setErrored(true)}
+      />
+    )
+  }
+  return <WeaponIcon weapon={skin.item_name} />
+}
+
 const WEAR_COLOR = {
   'Factory New':    '#4ade80',
   'Minimal Wear':   '#86efac',
@@ -14,8 +44,17 @@ const WEAR_COLOR = {
   'Battle-Scarred': '#f87171',
 }
 
-function PlayerCard({ player, activeTab }) {
-  const playerTeam = player.team || 'Unknown'
+function PlayerCard({ player }) {
+  const playerTeam = player.team || 'CT'
+  const [activeSide, setActiveSide] = useState(playerTeam)
+
+  const visibleSkins = (player.skins || []).filter(
+    s => s.side === activeSide || s.side === 'both'
+  )
+
+  const agentForSide = player.agent && (
+    player.agent.side === activeSide || player.agent.side === 'both'
+  ) ? player.agent : null
 
   return (
     <div className={styles.playerCard}>
@@ -24,115 +63,99 @@ function PlayerCard({ player, activeTab }) {
         <span className={`${styles.teamBadge} ${playerTeam === 'CT' ? styles.ct : styles.t}`}>
           {playerTeam}
         </span>
-      </div>
-
-      <div className={styles.statsGrid}>
-        <div className={styles.statCard}>
-          <div className={styles.statValue}>{player.kills ?? 0}</div>
-          <div className={styles.statLabel}>Kills</div>
-        </div>
-        <div className={styles.statCard}>
-          <div className={styles.statValue}>{player.deaths ?? 0}</div>
-          <div className={styles.statLabel}>Deaths</div>
-        </div>
-        <div className={styles.statCard}>
-          <div className={styles.statValue}>{player.assists ?? 0}</div>
-          <div className={styles.statLabel}>Assists</div>
-        </div>
-        <div className={styles.statCard}>
-          <div className={styles.statValue}>{player.kd_ratio ?? '0.00'}</div>
-          <div className={styles.statLabel}>K/D</div>
-        </div>
-        <div className={styles.statCard}>
-          <div className={styles.statValue}>{player.headshot_pct ?? 0}%</div>
-          <div className={styles.statLabel}>HS%</div>
-        </div>
-        <div className={styles.statCard}>
-          <div className={styles.statValue}>{player.total_damage ?? 0}</div>
-          <div className={styles.statLabel}>Damage</div>
+        <div className={styles.sideToggle}>
+          {['T', 'CT'].map(side => (
+            <button
+              key={side}
+              className={`${styles.sideBtn} ${activeSide === side ? (side === 'CT' ? styles.activeCT : styles.activeT) : ''}`}
+              onClick={() => setActiveSide(side)}
+            >
+              {side}
+            </button>
+          ))}
         </div>
       </div>
 
-      {activeTab === 'weapons' && (
-        <div className={styles.weaponsGrid}>
-          {player.weapons && player.weapons.length > 0 ? (
-            player.weapons.map((weapon, i) => (
-              <div key={i} className={styles.weaponCard}>
-                <div className={styles.weaponImage}>
-                  <WeaponIcon weapon={weapon.weapon} />
-                </div>
-                <div className={styles.weaponName}>{weapon.weapon}</div>
-                <div className={styles.weaponStats}>
-                  <span>Kills: {weapon.kills}</span>
-                  <span>HS Kills: {weapon.hs_kills}</span>
-                  <span>Shots: {weapon.shots}</span>
-                  <span>Hits: {weapon.hits}</span>
-                  <span>Dmg: {weapon.dmg}</span>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className={styles.noData}>No weapon data</div>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'agent' && (
+      {player.agent && (
         <div className={styles.agentSection}>
-          {player.agent ? (
+          {agentForSide ? (
             <div className={styles.agentCard}>
               <div className={styles.agentImage}>
-                <span className={styles.placeholderImage}>👤</span>
+                <AgentImage defIndex={agentForSide.def_index} name={agentForSide.item_name} />
               </div>
-              <div className={styles.agentName}>{player.agent.item_name}</div>
-              {player.agent.skin_name && (
-                <div className={styles.agentType}>{player.agent.skin_name}</div>
+              <div className={styles.agentName}>{agentForSide.item_name}</div>
+              {agentForSide.skin_name && (
+                <div className={styles.agentType}>{agentForSide.skin_name}</div>
               )}
-              <div className={styles.agentType}>
-                {player.agent.side === 'ct' ? 'CT' : player.agent.side === 't' ? 'T' : 'Both sides'}
-              </div>
             </div>
           ) : (
-            <div className={styles.noData}>No agent equipped</div>
+            <div className={styles.noData}>No {activeSide} agent equipped</div>
           )}
         </div>
       )}
 
-      {activeTab === 'skins' && (
-        <div className={styles.skinsGrid}>
-          {player.skins && player.skins.length > 0 ? (
-            player.skins.map((skin, i) => {
-              const tierColor = WEAR_COLOR[skin.wear_tier] || 'var(--muted)'
-              return (
-                <div key={i} className={styles.skinCard}>
-                  <div className={styles.skinImage}>
-                    <WeaponIcon weapon={skin.item_name} />
-                  </div>
-                  <div className={styles.skinItemName}>
-                    {skin.item_name}
-                    {skin.stattrak && <span className={styles.stattrak}> ST</span>}
-                  </div>
-                  <div className={styles.skinName}>
-                    {skin.skin_name || <span className={styles.vanilla}>Vanilla</span>}
-                  </div>
-                  {skin.custom_name && (
-                    <div className={styles.customName}>"{skin.custom_name}"</div>
-                  )}
-                  {skin.wear_tier && (
-                    <div className={styles.wearTier} style={{ color: tierColor }}>
-                      {skin.wear_tier}
-                      {skin.wear != null && (
-                        <span className={styles.wearValue}> {skin.wear}</span>
-                      )}
-                    </div>
-                  )}
+      <div className={styles.skinsGrid}>
+        {visibleSkins.length > 0 ? (
+          visibleSkins.map((skin, i) => {
+            const tierColor = WEAR_COLOR[skin.wear_tier] || 'var(--muted)'
+            return (
+              <div key={i} className={styles.skinCard}>
+                <div className={styles.skinImage}>
+                  <SkinImage skin={skin} />
                 </div>
-              )
-            })
-          ) : (
-            <div className={styles.noData}>No skins equipped</div>
-          )}
-        </div>
+                <div className={styles.skinItemName}>
+                  {skin.item_name}
+                  {skin.stattrak && <span className={styles.stattrak}> ST</span>}
+                </div>
+                <div className={styles.skinName}>
+                  {skin.skin_name || <span className={styles.vanilla}>Vanilla</span>}
+                </div>
+                {skin.custom_name && (
+                  <div className={styles.customName}>"{skin.custom_name}"</div>
+                )}
+                {skin.wear_tier && (
+                  <div className={styles.wearTier} style={{ color: tierColor }}>
+                    {skin.wear_tier}
+                    {skin.wear != null && (
+                      <span className={styles.wearValue}> {skin.wear}</span>
+                    )}
+                  </div>
+                )}
+                {skin.side === 'both' && (
+                  <div className={styles.bothBadge}>both sides</div>
+                )}
+              </div>
+            )
+          })
+        ) : (
+          <div className={styles.noData}>No {activeSide} skins equipped</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export function LoadoutPanel({ demoId }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['demo-loadout', demoId],
+    queryFn:  () => demosApi.getLoadout(demoId),
+    enabled:  !!demoId,
+  })
+
+  if (isLoading) return <div className={styles.loading}>Loading loadout data…</div>
+  if (error)     return <div className={styles.error}>Error loading loadout: {error.message}</div>
+  if (!data)     return <div className={styles.error}>No loadout data available</div>
+
+  const players = data.players || []
+
+  return (
+    <div className={styles.content}>
+      {players.length > 0 ? (
+        players.map((player, i) => (
+          <PlayerCard key={player.steamid || player.name || i} player={player} />
+        ))
+      ) : (
+        <div className={styles.noPlayers}>No player data available</div>
       )}
     </div>
   )
@@ -140,7 +163,6 @@ function PlayerCard({ player, activeTab }) {
 
 export default function Loadout() {
   const { demoId } = useParams()
-  const [activeTab, setActiveTab] = useState('weapons')
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['demo-loadout', demoId],
@@ -169,8 +191,6 @@ export default function Loadout() {
     </div>
   )
 
-  const players = data.players || []
-
   return (
     <div className={styles.container}>
       <SiteHeader />
@@ -181,28 +201,7 @@ export default function Loadout() {
           ← Back to Demo Viewer
         </Link>
       </div>
-
-      <div className={styles.content}>
-        <div className={styles.tabs}>
-          {['weapons', 'agent', 'skins'].map(tab => (
-            <button
-              key={tab}
-              className={`${styles.tabButton} ${activeTab === tab ? styles.active : ''}`}
-              onClick={() => setActiveTab(tab)}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {players.length > 0 ? (
-          players.map((player, i) => (
-            <PlayerCard key={player.steamid || player.name || i} player={player} activeTab={activeTab} />
-          ))
-        ) : (
-          <div className={styles.noPlayers}>No player data available</div>
-        )}
-      </div>
+      <LoadoutPanel demoId={demoId} />
     </div>
   )
 }

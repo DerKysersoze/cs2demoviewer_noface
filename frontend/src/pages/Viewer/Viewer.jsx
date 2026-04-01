@@ -11,6 +11,7 @@ import AimBreakdown  from './tabs/AimBreakdown'
 import SwagBreakdown from './tabs/SwagBreakdown'
 import MapView       from './tabs/MapView'
 import MapViewV2     from './tabs/MapViewV2'
+import { LoadoutPanel } from '../Loadout/Loadout'
 import styles from './Viewer.module.css'
 
 const TABS = [
@@ -20,6 +21,7 @@ const TABS = [
   { id: 'rounds',     label: 'Rounds' },
   { id: 'killfeed',   label: 'Kill Feed' },
   { id: 'aim',        label: 'Aim Breakdown' },
+  { id: 'loadout',    label: 'Loadout' },
 ]
 
 function ViewerToggle({ isV2, onToggle }) {
@@ -113,11 +115,6 @@ export default function Viewer() {
               </div>
             ))}
           </div>
-          <div className={styles.loadoutLink}>
-            <Link to={`/loadout/${id}`} className={styles.loadoutButton}>
-              View Loadout
-            </Link>
-          </div>
         </div>
 
         {/* Tab bar */}
@@ -143,6 +140,7 @@ export default function Viewer() {
         {tab === 'rounds'     && <Rounds     rounds={d.rounds || []} />}
         {tab === 'killfeed'   && <KillFeed   kills={d.kills || []} />}
         {tab === 'aim'        && <AimBreakdown  aimBreakdown={d.aim_breakdown || []} />}
+        {tab === 'loadout'    && <LoadoutPanel  demoId={id} />}
       </div>
     </>
   )
