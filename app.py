@@ -2124,8 +2124,9 @@ def api_demos_loadout(demo_id):
     }
     
     # Connect to database to get cosmetics data
-    con = get_db_connection()
-    
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+
     try:
         # Get all cosmetics for this demo
         cosmetics = con.execute(
