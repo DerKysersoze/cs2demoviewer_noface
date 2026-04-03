@@ -2453,6 +2453,11 @@ def api_admin_query():
         return jsonify({"error": str(e)}), 400
 
 
+@app.route("/api/admin/schema_map")
+def api_admin_schema_map():
+    return send_file(str(STRUCT_DB_DIR / "schema_map.html"), mimetype="text/html")
+
+
 @app.route("/api/admin/schema")
 def api_admin_schema():
     con = sqlite3.connect(DB_PATH)
