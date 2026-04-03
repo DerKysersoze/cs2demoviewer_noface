@@ -22,14 +22,26 @@ function AgentImage({ defIndex, name }) {
 }
 
 function SkinImage({ skin }) {
-  const [errored, setErrored] = useState(false)
-  if (skin.skin_image_id && !errored) {
+  const [skinErrored, setSkinErrored]   = useState(false)
+  const [baseErrored, setBaseErrored]   = useState(false)
+
+  if (skin.skin_image_id && !skinErrored) {
     return (
       <img
         src={`/images/skins/${skin.skin_image_id}.png`}
         alt={skin.skin_name || skin.item_name}
         className={styles.skinImageImg}
-        onError={() => setErrored(true)}
+        onError={() => setSkinErrored(true)}
+      />
+    )
+  }
+  if (skin.base_weapon_key && !baseErrored) {
+    return (
+      <img
+        src={`/images/base_weapons/${skin.base_weapon_key}.png`}
+        alt={skin.item_name}
+        className={styles.skinImageImg}
+        onError={() => setBaseErrored(true)}
       />
     )
   }

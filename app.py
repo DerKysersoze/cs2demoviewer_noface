@@ -65,6 +65,8 @@ def _after(response):
 # ── SQLite demo history ────────────────────────────────────────────────────────
 DB_PATH       = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demos.db")
 STRUCT_DB_DIR = Path(__file__).parent / "struct_db"
+DEMOS_DIR     = Path(__file__).parent / "demos_store"
+DEMOS_DIR.mkdir(exist_ok=True)
 
 
 
@@ -703,11 +705,13 @@ def _db_get(demo_id: str):
         events_by_round   = {int(k): v for k, v in _unblob(blob_row["events_data"]).items()}   if blob_row["events_data"]   else {}
         if len(_session_cache) >= MAX_SESSIONS:
             _session_cache.popitem(last=False)
+        _stored = DEMOS_DIR / f"{demo_id}.dem"
         _session_cache[demo_id] = {
             "ticks":    ticks_by_round,
             "grenades": grenades_by_round,
             "events":   events_by_round,
             "map_name": row["map"],
+            "dem_path": str(_stored) if _stored.exists() else None,
         }
         data["has_ticks"] = True
 
@@ -1051,6 +1055,64 @@ def _extract_buy_from_item_pickup(parser, round_ranges: dict) -> dict:
     except Exception as e:
         log.warning("_extract_buy_from_item_pickup failed: %s", e)
 
+    return result
+
+
+def extract_shots(dem_path, ticks_by_round: dict) -> dict:
+    """
+    Returns {round_num: [{tick, player, x, y, yaw}]} from weapon_fire events.
+    Excludes knife/grenade non-hitscan weapons.
+    """
+    if not dem_path:
+        return {}
+    _NON_TRACER = {"weapon_knife","weapon_knife_t","weapon_knife_ct","weapon_knife_ghost",
+                   "weapon_hegrenade","weapon_smokegrenade","weapon_flashbang",
+                   "weapon_molotov","weapon_incgrenade","weapon_decoy","weapon_c4","weapon_taser"}
+    # Build round tick ranges for assignment
+    round_ranges = {}
+    for rnum, frames in ticks_by_round.items():
+        if frames:
+            ticks = [f["t"] for f in frames]
+            round_ranges[rnum] = (min(ticks), max(ticks))
+
+    def _tick_to_round(tick):
+        for rnum, (start, end) in round_ranges.items():
+            if start - 5000 <= tick <= end + 1000:
+                return rnum
+        return None
+
+    result = {}
+    try:
+        from demoparser2 import DemoParser
+        parser = DemoParser(str(dem_path))
+        df = parser.parse_event("weapon_fire", player=["name", "yaw", "X", "Y"])
+        if df is None or (hasattr(df, "empty") and df.empty):
+            return {}
+        import pandas as pd
+        if isinstance(df, list):
+            df = df[0][1] if df and isinstance(df[0], tuple) else pd.DataFrame(df)
+        cols = list(df.columns)
+        for _, row in df.iterrows():
+            try:
+                weapon = str(row.get("weapon","")).lower()
+                if weapon in _NON_TRACER:
+                    continue
+                tick   = int(row["tick"])
+                player = str(row.get("user_name") or row.get("name","?"))
+                x      = float(row["user_X"])
+                y      = float(row["user_Y"])
+                yaw    = float(row["user_yaw"])
+                rnum   = _tick_to_round(tick)
+                if rnum is None:
+                    continue
+                result.setdefault(int(rnum), []).append({
+                    "tick": tick, "player": player,
+                    "x": x, "y": y, "yaw": yaw,
+                })
+            except Exception:
+                continue
+    except Exception as e:
+        log.warning("extract_shots failed: %s", e)
     return result
 
 
@@ -1487,6 +1549,8 @@ _SKIN_NAMES: dict = {}
 _SKIN_IDS:   dict = {}   # paint_index (str) -> skin id (e.g. "skin-f64cdaac0b90")
 _SKIN_NAMES_LOADED = False
 
+_BASE_WEAPON_IDS: dict = {}  # def_index (int) -> base weapon image id (e.g. "base_weapon-weapon_ak47")
+
 
 def _load_skin_names() -> dict:
     """Build paint_index -> skin name and paint_index -> skin id dicts from struct_db/skins.json."""
@@ -1521,6 +1585,26 @@ def _load_skin_names() -> dict:
         _SKIN_NAMES = {}
         _SKIN_IDS   = {}
     return _SKIN_NAMES
+
+
+def _load_base_weapon_ids() -> None:
+    """Build def_index -> base weapon image id from struct_db/base_weapons.json."""
+    global _BASE_WEAPON_IDS
+    p = STRUCT_DB_DIR / "base_weapons.json"
+    if not p.exists():
+        log.warning("base weapons: base_weapons.json not found at %s", p)
+        return
+    try:
+        with open(p, encoding="utf-8") as f:
+            items = json.load(f)
+        _BASE_WEAPON_IDS = {
+            item["def_index"]: item["id"]
+            for item in items
+            if isinstance(item, dict) and item.get("def_index") and item.get("id")
+        }
+        log.info("base weapons: loaded %d entries from base_weapons.json", len(_BASE_WEAPON_IDS))
+    except Exception as e:
+        log.warning("base weapons: failed to load from base_weapons.json: %s", e)
 
 
 def extract_cosmetics(dem_path: str) -> list:
@@ -1983,13 +2067,16 @@ def parse_demo(dem_path: str) -> dict:
     ticks_by_round    = extract_ticks(demo, dem_path)
     grenades_by_round = extract_grenades(dem_path, ticks_by_round)
     events_by_round   = extract_events(dem_path, ticks_by_round)
+    shots_by_round    = extract_shots(dem_path, ticks_by_round)
     if len(_session_cache) >= MAX_SESSIONS:
         _session_cache.popitem(last=False)
     _session_cache[session_id] = {
         "ticks":    ticks_by_round,
         "grenades": grenades_by_round,
         "events":   events_by_round,
+        "shots":    shots_by_round,
         "map_name": header["map"],
+        "dem_path": str(dem_path) if dem_path else None,
     }
 
     return {
@@ -2036,11 +2123,20 @@ def api_parse():
     try:
         data = parse_demo(tmp_path)
         data["filename"] = f.filename
-        cached = _session_cache.get(data["session_id"], {})
+        session_id = data["session_id"]
+        cached = _session_cache.get(session_id, {})
         ticks    = cached.get("ticks", {})
         grenades = cached.get("grenades", {})
         events   = cached.get("events", {})
-        _db_save(data["session_id"], f.filename, data["header"]["map"], data, ticks, grenades, events)
+        _db_save(session_id, f.filename, data["header"]["map"], data, ticks, grenades, events)
+
+        # Persist the .dem file so re-parse endpoints (tracers etc.) can reuse it
+        stored_path = DEMOS_DIR / f"{session_id}.dem"
+        import shutil
+        shutil.copy2(tmp_path, stored_path)
+        if session_id in _session_cache:
+            _session_cache[session_id]["dem_path"] = str(stored_path)
+
         elapsed = time.monotonic() - _t0
         log.info("parse: completed %s — map=%s rounds=%s ticks=%s (%.2fs)",
                  f.filename, data["header"].get("map"),
@@ -2065,7 +2161,81 @@ def api_ticks(session_id, round_num):
     frames   = session["ticks"].get(round_num, [])
     grenades = session.get("grenades", {}).get(round_num, [])
     events   = session.get("events",   {}).get(round_num, [])
-    return jsonify({"frames": frames, "count": len(frames), "grenades": grenades, "events": events})
+    # Lazy-parse shots if missing (session loaded from DB cache before this feature existed)
+    if "shots" not in session:
+        dem_path = session.get("dem_path") or (
+            str(DEMOS_DIR / f"{session_id}.dem")
+            if (DEMOS_DIR / f"{session_id}.dem").exists() else None
+        )
+        session["shots"] = extract_shots(dem_path, session["ticks"]) if dem_path else {}
+    shots = session["shots"].get(round_num, [])
+    return jsonify({"frames": frames, "count": len(frames), "grenades": grenades, "events": events, "shots": shots})
+
+
+@app.route("/api/probe_bullets/<session_id>/<int:round_num>")
+def api_probe_bullets(session_id, round_num):
+    """Probe endpoint: try parsing bullet_impact for one round and report what comes back."""
+    session = _session_cache.get(session_id)
+    # If not in memory cache, check if the stored .dem exists directly
+    stored = DEMOS_DIR / f"{session_id}.dem"
+    if session:
+        dem_path = session.get("dem_path") or (str(stored) if stored.exists() else None)
+    elif stored.exists():
+        dem_path = str(stored)
+    else:
+        return jsonify({"error": "Session expired and no stored .dem found"}), 404
+    if not dem_path:
+        return jsonify({"error": "No dem_path available"}), 404
+    try:
+        from demoparser2 import DemoParser
+        parser = DemoParser(dem_path)
+
+        # weapon_fire with yaw requested via player prop
+        rows = None
+        try:
+            rows = parser.parse_event("weapon_fire", player=["name", "yaw", "pitch", "X", "Y"])
+        except Exception as e1:
+            return jsonify({"error": f"weapon_fire parse failed: {e1}"})
+
+        if rows is None or (hasattr(rows, '__len__') and len(rows) == 0):
+            return jsonify({"error": "weapon_fire returned no data"})
+
+        # Also probe parse_ticks for yaw to confirm it's available that way
+        yaw_tick_cols = []
+        try:
+            tdf = parser.parse_ticks(["yaw", "pitch"])
+            if tdf is not None:
+                yaw_tick_cols = list(tdf.columns)
+        except Exception as ey:
+            yaw_tick_cols = [f"error: {ey}"]
+
+        if rows is None or (hasattr(rows, '__len__') and len(rows) == 0):
+            return jsonify({"error": "bullet_impact returned no data"})
+
+        # rows may be a DataFrame or list of (name, df) tuples
+        import pandas as pd
+        if isinstance(rows, list):
+            df = rows[0][1] if rows and isinstance(rows[0], tuple) else pd.DataFrame(rows)
+        else:
+            df = rows
+
+        if df is None or df.empty:
+            return jsonify({"error": "bullet_impact DataFrame is empty"})
+
+        # Filter to the requested round if round_num column exists
+        cols = list(df.columns)
+        round_df = df[df["round"] == round_num] if "round" in cols else \
+                   df[df["round_num"] == round_num] if "round_num" in cols else df
+
+        return jsonify({
+            "columns": cols,
+            "total_rows": len(df),
+            "round_rows": len(round_df),
+            "sample": round_df.head(10).to_dict(orient="records"),
+            "yaw_tick_cols": yaw_tick_cols,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/map_info/<map_name>")
@@ -2209,7 +2379,8 @@ def api_demos_loadout(demo_id):
                     "custom_name": cosmetic["custom_name"],
                     "stattrak": cosmetic["stattrak"],
                     "side": cosmetic["side"],
-                    "skin_image_id": _SKIN_IDS.get(f"{cosmetic['paint_index']}:{cosmetic['def_index']}") if cosmetic["paint_index"] else None,
+                    "skin_image_id":    _SKIN_IDS.get(f"{cosmetic['paint_index']}:{cosmetic['def_index']}") if cosmetic["paint_index"] else None,
+                    "base_weapon_key": _BASE_WEAPON_IDS.get(cosmetic["def_index"]),
                 })
         
         # Convert to list for JSON serialization
@@ -2299,6 +2470,7 @@ def api_admin_schema():
 
 
 _load_skin_names()
+_load_base_weapon_ids()
 
 log.info("startup complete — cs2demviewer ready")
 

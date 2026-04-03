@@ -5,8 +5,6 @@ import { demosApi } from '../../api/demos'
 import SiteHeader    from '../../components/SiteHeader'
 import Scoreboard    from './tabs/Scoreboard'
 import Timeline      from './tabs/Timeline'
-import Rounds        from './tabs/Rounds'
-import KillFeed      from './tabs/KillFeed'
 import AimBreakdown  from './tabs/AimBreakdown'
 import SwagBreakdown from './tabs/SwagBreakdown'
 import MapView       from './tabs/MapView'
@@ -17,9 +15,7 @@ import styles from './Viewer.module.css'
 const TABS = [
   { id: 'scoreboard', label: 'Scoreboard' },
   { id: 'timeline',   label: 'Timeline' },
-  { id: 'map',        label: 'Visual Timeline' },
-  { id: 'rounds',     label: 'Rounds' },
-  { id: 'killfeed',   label: 'Kill Feed' },
+  { id: 'map',        label: '2D Replay' },
   { id: 'aim',        label: 'Aim Breakdown' },
   { id: 'loadout',    label: 'Loadout' },
 ]
@@ -88,9 +84,9 @@ export default function Viewer() {
         </Link>
       </SiteHeader>
 
-      <div className={styles.results}>
+      <div className={`${styles.results}${tab === 'map' ? ' ' + styles.resultsFullscreen : ''}`}>
         {/* Match header */}
-        <div className={styles.matchHeader}>
+        {tab !== 'map' && <div className={styles.matchHeader}>
           <div className={styles.matchScore}>
             <div className={styles.teamBlock}>
               <div className={`${styles.teamName} ${styles.ctColor}`}>{d.ct_team}</div>
@@ -115,7 +111,7 @@ export default function Viewer() {
               </div>
             ))}
           </div>
-        </div>
+        </div>}
 
         {/* Tab bar */}
         <div className={styles.tabs}>
@@ -137,8 +133,6 @@ export default function Viewer() {
           ? <MapViewV2 demo={d} demoId={id} />
           : <MapView   demo={d} demoId={id} />
         )}
-        {tab === 'rounds'     && <Rounds     rounds={d.rounds || []} />}
-        {tab === 'killfeed'   && <KillFeed   kills={d.kills || []} />}
         {tab === 'aim'        && <AimBreakdown  aimBreakdown={d.aim_breakdown || []} />}
         {tab === 'loadout'    && <LoadoutPanel  demoId={id} />}
       </div>

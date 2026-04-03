@@ -43,6 +43,14 @@ def ensure_images():
             if item.get("id") and item.get("image"):
                 to_download.append((item["image"], agents_dir / f"{item['id']}.png"))
 
+    base_weapons_dir = ROOT / "images" / "base_weapons"
+    if not base_weapons_dir.exists():
+        base_weapons_dir.mkdir(parents=True)
+        base_weapons = json.loads((ROOT / "struct_db" / "base_weapons.json").read_text(encoding="utf-8"))
+        for item in base_weapons:
+            if item.get("id") and item.get("image"):
+                to_download.append((item["image"], base_weapons_dir / f"{item['id']}.png"))
+
     if not to_download:
         return
 
