@@ -1,4 +1,4 @@
-# CS2 Demo Viewer
+# CS2 Demo Viewer - a local analytic tool with the rich feature-set and expanding.
 
 A local web app for parsing and visualising Counter-Strike 2 `.dem` files.  
 Upload a demo, replay fights on an interactive minimap, dissect aim stats, and browse player loadouts — all in your browser.
@@ -113,41 +113,17 @@ cd ..
 
 ## Running the app
 
-### Development mode (recommended for local use)
-
 Starts both the Flask backend (port 5000) and the Vite dev server (port 3000) together:
 
 ```bash
 python start.py
 ```
 
-Then open **http://localhost:3000** in your browser.
+Then open **http://localhost:3000** in your browser. This is the only URL needed to access the entire application and use it fully.
 
 > Press `Ctrl+C` to stop both servers.
 
 On first run, skin and agent images are downloaded automatically. This takes a moment but only happens once.
-
-### Backend only (uses pre-built frontend)
-
-If you don't want to run the Vite dev server, the pre-built frontend in `static_react/` is served directly by Flask:
-
-```bash
-python app.py
-```
-
-Open **http://localhost:5000**.
-
-### Build the frontend yourself (optional)
-
-If you modify the React source and want to rebuild the static files:
-
-```bash
-cd frontend
-npm run build
-cd ..
-```
-
-Output goes to `static_react/`.
 
 ---
 
