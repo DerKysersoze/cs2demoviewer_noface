@@ -1,13 +1,66 @@
 # CS2 Demo Viewer
 
-A local web application for parsing and visualising CS2 demo files (`.dem`).
-Upload a demo to get per-round kill feeds, scoreboard, map view with player positions, aim breakdown, timeline, and cosmetic/inventory data.
+A local web app for parsing and visualising Counter-Strike 2 `.dem` files.  
+Upload a demo, replay fights on an interactive minimap, dissect aim stats, and browse player loadouts — all in your browser.
+
+---
+
+## Features
+
+### 2D Replay
+
+![2D Replay](screenshots/2d-replay.png)
+
+Step through any round tick-by-tick on an accurate minimap overlay.
+
+- **Live player positions** — colour-coded circles per player, labelled with name & HP bar
+- **Shot tracers** — lines drawn between shooter and target for every shot fired
+- **Kill feed** — scrollable event log on the right panel, timestamped per tick
+- **Playback controls** — play / pause / step forward-backward, variable speed (1×–8×)
+- **Round scrubber** — jump to any tick within the round; switch rounds from the bottom strip
+- **Zoom & pan** — scroll-wheel zoom, drag to pan around the map
+
+![2D Replay — active fight](screenshots/2d%20replay%202.png)
+
+---
+
+### Aim Breakdown
+
+![Aim Breakdown](screenshots/stats-breakdown.png)
+
+Deep-dive into any player's shooting performance for the match.
+
+- **Summary row** — shots, hits, accuracy %, damage, HS%, total kills, assists
+- **Hit location breakdown** — bar chart across Head / Neck / Chest / Stomach / Arms / Legs
+- **Per-weapon table** — shots · hits · ACC% · DMG · AVG DMG · kills · HS kills for every weapon used, with colour-coded weapon labels by category
+
+---
+
+### Loadout
+
+![Loadout](screenshots/loadout-example.png)
+
+Browse every player's cosmetics as equipped during the match.
+
+- **Agent model** — full render of the equipped agent skin
+- **Weapon skins** — name, collection, wear tier, and float value for each slot
+- **StatTrak™** badge where applicable
+- **T / CT side toggle** — switch between the player's Terrorist and Counter-Terrorist loadouts
+
+---
+
+## Stack
+
+| Layer | Tech |
+|---|---|
+| Demo parser | [awpy](https://github.com/pnxenopoulos/awpy) |
+| Backend API | Flask + SQLite |
+| Frontend | React 19 + Vite |
+| Map rendering | HTML5 Canvas |
 
 ---
 
 ## Prerequisites
-
-Install these before anything else.
 
 | Tool | Minimum version | Download |
 |------|----------------|---------|
@@ -72,6 +125,8 @@ Then open **http://localhost:3000** in your browser.
 
 > Press `Ctrl+C` to stop both servers.
 
+On first run, skin and agent images are downloaded automatically. This takes a moment but only happens once.
+
 ### Backend only (uses pre-built frontend)
 
 If you don't want to run the Vite dev server, the pre-built frontend in `static_react/` is served directly by Flask:
@@ -125,6 +180,7 @@ cs2demoviewer_noface/
 ├── app.py              # Flask backend + demo parsing
 ├── start.py            # Launches both servers together
 ├── requirements.txt    # Python dependencies
+├── screenshots/        # Feature screenshots (used in this README)
 ├── frontend/           # React/Vite source
 │   ├── src/
 │   └── package.json
@@ -136,17 +192,17 @@ cs2demoviewer_noface/
 
 ## Troubleshooting
 
-**`ModuleNotFoundError: No module named 'awpy'`**
+**`ModuleNotFoundError: No module named 'awpy'`**  
 Run `pip install -r requirements.txt` again. If using a virtual environment make sure it is activated.
 
-**`npm: command not found`**
+**`npm: command not found`**  
 Node.js is not installed or not on PATH. Install from https://nodejs.org/.
 
-**Map images not showing**
+**Map images not showing**  
 Use the "Download Maps" button on the Upload page. Requires an internet connection on first use.
 
-**Port already in use**
-Another process is using port 5000 or 3000. Stop it or change the port in `app.py` (line ~1797) and `frontend/vite.config.js`.
+**Port already in use**  
+Another process is using port 5000 or 3000. Stop it or change the port in `app.py` and `frontend/vite.config.js`.
 
-**`demoparser2` install fails**
+**`demoparser2` install fails**  
 This is optional. The app works without it; some per-player cosmetic/armor fields will be absent.
