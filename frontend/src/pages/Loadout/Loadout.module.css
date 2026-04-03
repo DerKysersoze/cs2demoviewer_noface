@@ -1,0 +1,404 @@
+.container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: #e6e6e6;
+  padding: 20px;
+}
+
+.header {
+  max-width: 1200px;
+  margin: 0 auto 30px;
+  padding: 20px;
+  border-bottom: 2px solid #00a8ff;
+}
+
+.header h1 {
+  margin: 0 0 10px 0;
+  font-size: 2rem;
+  background: linear-gradient(to right, #00a8ff, #00d2d3);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.header p {
+  margin: 0 0 15px 0;
+  color: #a0a0c0;
+}
+
+.backButton {
+  display: inline-block;
+  color: #00a8ff;
+  text-decoration: none;
+  padding: 8px 16px;
+  border-radius: 5px;
+  background: rgba(0, 168, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.backButton:hover {
+  background: rgba(0, 168, 255, 0.2);
+  text-decoration: underline;
+}
+
+.content {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.playerCard {
+  background: rgba(30, 30, 46, 0.8);
+  border-radius: 15px;
+  padding: 25px;
+  margin-bottom: 30px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.playerHeader {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.playerName {
+  margin: 0 15px 0 0;
+  font-size: 1.5rem;
+  color: #00d2d3;
+}
+
+.teamBadge {
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.ct {
+  background: linear-gradient(45deg, #00a8ff, #00d2d3);
+}
+
+.t {
+  background: linear-gradient(45deg, #ff6b6b, #ff8e8e);
+}
+
+.sideToggle {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.sideBtn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  background: transparent;
+  color: #a0a0c0;
+  transition: all 0.15s;
+}
+
+.sideBtn.activeCT {
+  background: rgba(0, 168, 255, 0.2);
+  color: #00d2d3;
+}
+
+.sideBtn.activeT {
+  background: rgba(255, 107, 107, 0.2);
+  color: #ff8e8e;
+}
+
+.bothBadge {
+  font-size: 0.65rem;
+  color: #a0a0c0;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-top: 4px;
+  display: inline-block;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 15px;
+  margin-bottom: 25px;
+}
+
+.statCard {
+  background: rgba(20, 20, 35, 0.7);
+  border-radius: 10px;
+  padding: 15px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.statValue {
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #00d2d3;
+  margin: 5px 0;
+}
+
+.statLabel {
+  font-size: 0.9rem;
+  color: #a0a0c0;
+}
+
+.tabs {
+  display: flex;
+  margin-bottom: 25px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tabButton {
+  padding: 12px 20px;
+  background: transparent;
+  border: none;
+  color: #a0a0c0;
+  cursor: pointer;
+  font-size: 1rem;
+  border-bottom: 3px solid transparent;
+  transition: all 0.3s ease;
+}
+
+.tabButton:hover {
+  color: #00d2d3;
+}
+
+.tabButton.active {
+  color: #00d2d3;
+  border-bottom: 3px solid #00d2d3;
+}
+
+.weaponsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+}
+
+.weaponCard {
+  background: rgba(20, 20, 35, 0.7);
+  border-radius: 10px;
+  padding: 15px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.3s ease;
+}
+
+.weaponCard:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 168, 255, 0.3);
+  border-color: rgba(0, 168, 255, 0.3);
+}
+
+.weaponImage {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.placeholderImage {
+  font-size: 2rem;
+}
+
+.weaponName {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: #00d2d3;
+}
+
+.weaponStats {
+  font-size: 0.85rem;
+  color: #6c757d;
+}
+
+.weaponStats span {
+  display: block;
+  margin: 3px 0;
+}
+
+.agentSection {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 150px;
+}
+
+.agentCard {
+  background: rgba(20, 20, 35, 0.7);
+  border-radius: 10px;
+  padding: 20px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.agentImage {
+  width: 100px;
+  height: 100px;
+  margin-bottom: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.agentName {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 5px;
+  color: #00d2d3;
+}
+
+.agentType {
+  font-size: 0.9rem;
+  color: #a0a0c0;
+}
+
+.skinsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 20px;
+}
+
+.skinCard {
+  background: rgba(20, 20, 35, 0.7);
+  border-radius: 10px;
+  padding: 15px;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.3s ease;
+}
+
+.skinCard:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 168, 255, 0.3);
+  border-color: rgba(0, 168, 255, 0.3);
+}
+
+.skinImage {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.agentImageImg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.skinImageImg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.skinItemName {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e6e6e6;
+  margin-bottom: 3px;
+}
+
+.skinName {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 3px;
+  color: #00d2d3;
+}
+
+.skinType {
+  font-size: 0.8rem;
+  color: #a0a0c0;
+}
+
+.vanilla {
+  color: #a0a0c0;
+  font-style: italic;
+  font-weight: 400;
+}
+
+.stattrak {
+  color: #f97316;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.customName {
+  font-size: 0.75rem;
+  color: var(--ct, #00a8ff);
+  font-style: italic;
+  margin-bottom: 3px;
+}
+
+.wearTier {
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.wearValue {
+  font-size: 0.7rem;
+  color: #a0a0c0;
+  font-weight: 400;
+}
+
+.noData {
+  text-align: center;
+  padding: 20px;
+  color: #a0a0c0;
+}
+
+.noPlayers {
+  text-align: center;
+  padding: 40px;
+  color: #a0a0c0;
+  font-size: 1.2rem;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  font-size: 1.2rem;
+}
+
+.error {
+  text-align: center;
+  padding: 40px;
+  color: #ff6b6b;
+  font-size: 1.2rem;
+}

@@ -25,7 +25,7 @@ function worldRadiusToPx(r, bounds, size) {
 export function useMapCanvas() {
   const canvasRef = useRef(null)
 
-  const redraw = useCallback((frames, frameIdx, bounds, mapImage, hiddenPlayers, playerColorMap, grenades) => {
+  const redraw = useCallback((frames, frameIdx, bounds, mapImage, hiddenPlayers, playerColorMap, grenades, zoom = 1, pan = { x: 0, y: 0 }, shots = []) => {
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -37,13 +37,20 @@ export function useMapCanvas() {
     ctx.fillStyle = '#0a0a10'
     ctx.fillRect(0, 0, size, size)
 
+    ctx.save()
+    ctx.translate(pan.x, pan.y)
+    ctx.scale(zoom, zoom)
+
     if (mapImage) {
       ctx.globalAlpha = 0.55
       ctx.drawImage(mapImage, 0, 0, size, size)
       ctx.globalAlpha = 1
     }
 
-    if (!frames.length || !bounds) return
+    if (!frames.length || !bounds) {
+      ctx.restore()
+      return
+    }
     const frame = frames[frameIdx]
     if (!frame) return
 
@@ -62,6 +69,40 @@ export function useMapCanvas() {
         ctx.fill()
         ctx.strokeStyle = style.stroke
         ctx.lineWidth   = 1.5
+        ctx.stroke()
+      })
+      ctx.globalAlpha = 1
+    }
+
+    // ── Tracers ──────────────────────────────────────────────
+    // Frames are sampled 1-in-8 ticks, so use a wide enough window (~2s at 64hz = 128 ticks).
+    // CS2 yaw: 0°=east, CCW positive, stored in degrees.
+    // worldToCanvas flips Y (pos_y - wy), so +Y game = -Y canvas → sin component negated.
+    if (shots?.length) {
+      const currentTick   = frame.t
+      const TRACER_TICKS  = 128  // ~2 seconds at 64 hz
+      const TRACER_LENGTH = 2000 // world units
+
+      shots.forEach(s => {
+        const age = currentTick - s.tick
+        if (age < 0 || age > TRACER_TICKS) return
+        if (hiddenPlayers.has(s.player)) return
+
+        const fade  = 1 - age / TRACER_TICKS
+        const color = playerColorMap[s.player] || '#fff'
+        const from  = worldToCanvas(s.x, s.y, bounds, size)
+
+        const radYaw = (s.yaw * Math.PI) / 180
+        const wx2 = s.x + Math.cos(radYaw) * TRACER_LENGTH
+        const wy2 = s.y - Math.sin(radYaw) * TRACER_LENGTH  // negate: game +Y = canvas -Y
+        const to  = worldToCanvas(wx2, wy2, bounds, size)
+
+        ctx.beginPath()
+        ctx.moveTo(from.x, from.y)
+        ctx.lineTo(to.x, to.y)
+        ctx.strokeStyle = color
+        ctx.lineWidth   = 1.5
+        ctx.globalAlpha = fade * 0.9
         ctx.stroke()
       })
       ctx.globalAlpha = 1
@@ -112,6 +153,14 @@ export function useMapCanvas() {
         return
       }
 
+      // Side ring (CT = blue, T = yellow) — outermost, drawn first
+      ctx.beginPath()
+      ctx.arc(pos.x, pos.y, r + 5, 0, Math.PI * 2)
+      ctx.strokeStyle = (pl.side || '').toUpperCase().includes('CT') ? '#38bdf8' : '#fbbf24'
+      ctx.lineWidth   = 2.5
+      ctx.globalAlpha = 1
+      ctx.stroke()
+
       // HP arc
       ctx.beginPath()
       ctx.arc(pos.x, pos.y, r + 2, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * Math.min(1, (pl.hp || 0) / 100))
@@ -127,14 +176,6 @@ export function useMapCanvas() {
       ctx.globalAlpha = 0.9
       ctx.fill()
 
-      // Side ring (CT = blue, T = yellow)
-      ctx.beginPath()
-      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2)
-      ctx.strokeStyle = (pl.side || '').toUpperCase().includes('CT') ? '#38bdf8' : '#fbbf24'
-      ctx.lineWidth   = 1.5
-      ctx.globalAlpha = 1
-      ctx.stroke()
-
       // Name label
       ctx.font      = 'bold 9px sans-serif'
       ctx.textAlign = 'center'
@@ -143,6 +184,8 @@ export function useMapCanvas() {
       ctx.fillText(pl.n.split(' ')[0].substring(0, 8), pos.x, pos.y - r - 3)
       ctx.globalAlpha = 1
     })
+
+    ctx.restore()
   }, [])
 
   return { canvasRef, redraw }

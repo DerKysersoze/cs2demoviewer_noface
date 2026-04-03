@@ -98,7 +98,7 @@
 <body>
 
 <h1>CS2 Demo Viewer — Database Schema</h1>
-<p class="subtitle">9 tables &nbsp;·&nbsp; All data relational — no BLOB columns except compressed tick positions &nbsp;·&nbsp; Scroll / drag to pan &nbsp;·&nbsp; Use + / − to zoom</p>
+<p class="subtitle">10 tables &nbsp;·&nbsp; All data relational — BLOB columns only for compressed positional data (ticks, grenades, events) &nbsp;·&nbsp; Scroll / drag to pan &nbsp;·&nbsp; Use + / − to zoom</p>
 
 <div class="legend">
   <div class="legend-group">
@@ -125,7 +125,7 @@
   <div class="tab active" onclick="switchTab('overview', event)">Overview</div>
   <div class="tab" onclick="switchTab('match', event)">Match Data</div>
   <div class="tab" onclick="switchTab('aim', event)">Aim Breakdown</div>
-  <div class="tab" onclick="switchTab('cosm', event)">Cosmetics &amp; Ticks</div>
+  <div class="tab" onclick="switchTab('cosm', event)">Cosmetics &amp; Blobs</div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
@@ -137,7 +137,7 @@
     <span class="zoom-val" id="zv-overview">100%</span>
     <button class="ctrl-btn" onclick="zoom('overview', 0.1)">+</button>
     <button class="ctrl-btn" onclick="resetZoom('overview')">Reset</button>
-    <span style="margin-left:8px">All 9 tables — FK relationships &amp; key columns</span>
+    <span style="margin-left:8px">All 10 tables — FK relationships &amp; key columns</span>
   </div>
   <div class="diagram-wrap" id="wrap-overview">
     <div class="mermaid" id="dia-overview">
@@ -219,9 +219,11 @@ erDiagram
         INTEGER hits
         INTEGER dmg
     }
-    demo_ticks {
+    demo_data_blobs {
         TEXT demo_id PK
         BLOB ticks_data
+        BLOB grenades_data
+        BLOB events_data
     }
     demo_cosmetics {
         INTEGER id PK
@@ -242,7 +244,7 @@ erDiagram
     demos ||--o{ demo_aim          : "demo_id"
     demos ||--o{ demo_aim_weapons  : "demo_id"
     demos ||--o{ demo_aim_hitgroups: "demo_id"
-    demos ||--|| demo_ticks        : "demo_id"
+    demos ||--|| demo_data_blobs   : "demo_id"
     demos ||--o{ demo_cosmetics    : "demo_id"
     </div>
   </div>
@@ -497,7 +499,7 @@ erDiagram
     <span class="zoom-val" id="zv-cosm">100%</span>
     <button class="ctrl-btn" onclick="zoom('cosm', 0.1)">+</button>
     <button class="ctrl-btn" onclick="resetZoom('cosm')">Reset</button>
-    <span style="margin-left:8px">demo_cosmetics · demo_ticks — all columns</span>
+    <span style="margin-left:8px">demo_cosmetics · demo_data_blobs — all columns</span>
   </div>
   <div class="diagram-wrap" id="wrap-cosm">
     <div class="mermaid" id="dia-cosm">
@@ -523,13 +525,15 @@ erDiagram
         INTEGER is_agent
         TEXT side
     }
-    demo_ticks {
+    demo_data_blobs {
         TEXT demo_id PK
         BLOB ticks_data
+        BLOB grenades_data
+        BLOB events_data
     }
 
-    demos ||--o{ demo_cosmetics : "demo_id"
-    demos ||--|| demo_ticks     : "demo_id"
+    demos ||--o{ demo_cosmetics  : "demo_id"
+    demos ||--|| demo_data_blobs : "demo_id"
     </div>
   </div>
 
@@ -556,13 +560,18 @@ erDiagram
       </table>
     </div>
     <div class="col-card">
-      <div class="col-card-head"><span class="dot" style="background:#56d8c0"></span>demo_ticks</div>
+      <div class="col-card-head"><span class="dot" style="background:#56d8c0"></span>demo_data_blobs</div>
       <table class="col-table">
         <tr><td class="cn">demo_id</td><td class="ct">TEXT</td><td><span class="ck ck-pk">PK</span></td></tr>
         <tr><td class="cn">ticks_data</td><td class="ct">BLOB</td><td><span class="ck ck-blob">BLOB</span></td></tr>
+        <tr><td class="cn">grenades_data</td><td class="ct">BLOB</td><td><span class="ck ck-blob">BLOB</span></td></tr>
+        <tr><td class="cn">events_data</td><td class="ct">BLOB</td><td><span class="ck ck-blob">BLOB</span></td></tr>
       </table>
       <div style="padding:8px 14px;font-size:0.72rem;color:#6e7681;border-top:1px solid #21262d">
-        zlib-compressed JSON: per-round player positions, health, and alive state sampled at 1-in-8 ticks
+        All three zlib-compressed positional blobs per demo. Each column is nullable —
+        ticks: player positions/health/armor at 1-in-8 ticks;
+        grenades: {type, x, y, from_tick, to_tick};
+        events: buy &amp; kill events for the live feed.
       </div>
     </div>
   </div>

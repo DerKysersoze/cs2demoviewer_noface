@@ -68,7 +68,16 @@ export default function Admin() {
   return (
     <>
       <SiteHeader>
-        <Link to="/" className="btn btn-ghost" style={{ marginLeft: 'auto' }}>
+        <a
+          href="http://localhost:5000/api/admin/schema_map"
+          target="_blank"
+          rel="noreferrer"
+          className="btn btn-ghost"
+          style={{ marginLeft: 'auto' }}
+        >
+          Schema Map ↗
+        </a>
+        <Link to="/" className="btn btn-ghost">
           ← Back to app
         </Link>
       </SiteHeader>

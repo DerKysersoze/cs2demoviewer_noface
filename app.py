@@ -17,7 +17,7 @@ import uuid
 from collections import OrderedDict
 from pathlib import Path
 
-from flask import Flask, g, jsonify, render_template, request, send_file
+from flask import Flask, g, jsonify, render_template, request, send_file, send_from_directory
 
 # ── Logging setup ──────────────────────────────────────────────────────────────
 # Enabled only when launched with --verbose.
@@ -65,6 +65,8 @@ def _after(response):
 # ── SQLite demo history ────────────────────────────────────────────────────────
 DB_PATH       = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demos.db")
 STRUCT_DB_DIR = Path(__file__).parent / "struct_db"
+DEMOS_DIR     = Path(__file__).parent / "demos_store"
+DEMOS_DIR.mkdir(exist_ok=True)
 
 
 
@@ -280,15 +282,11 @@ CREATE TABLE IF NOT EXISTS demo_aim_hitgroups (
 );
 CREATE INDEX IF NOT EXISTS idx_demo_aim_hitgroups_demo_id ON demo_aim_hitgroups(demo_id);
 
-CREATE TABLE IF NOT EXISTS demo_ticks (
-    demo_id    TEXT PRIMARY KEY,
-    ticks_data BLOB NOT NULL,
-    FOREIGN KEY (demo_id) REFERENCES demos(id)
-);
-
-CREATE TABLE IF NOT EXISTS demo_grenades (
-    demo_id        TEXT PRIMARY KEY,
-    grenades_data  BLOB NOT NULL,
+CREATE TABLE IF NOT EXISTS demo_data_blobs (
+    demo_id       TEXT PRIMARY KEY,
+    ticks_data    BLOB,
+    grenades_data BLOB,
+    events_data   BLOB,
     FOREIGN KEY (demo_id) REFERENCES demos(id)
 );
 """
@@ -460,7 +458,8 @@ def _db_init():
 
 
 def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
-             ticks_by_round: dict = None, grenades_by_round: dict = None):
+             ticks_by_round: dict = None, grenades_by_round: dict = None,
+             events_by_round: dict = None):
     h = data_dict.get("header") or {}
     has_ticks = bool(ticks_by_round)
     log.info("db_save: starting — demo_id=%s filename=%s map=%s", demo_id, filename, map_name)
@@ -474,7 +473,7 @@ def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             demo_id, filename, map_name,
-            datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            datetime.datetime.now(datetime.UTC),
             h.get("tickrate"), h.get("duration"),
             data_dict.get("ct_team"), data_dict.get("t_team"),
             data_dict.get("ct_wins"), data_dict.get("t_wins"),
@@ -555,20 +554,18 @@ def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
                  for hg, cnt in hit_groups.items()],
             )
 
-    # ---- demo_ticks ----
-    con.execute("DELETE FROM demo_ticks WHERE demo_id = ?", (demo_id,))
-    if ticks_by_round:
+    # ---- demo_data_blobs ----
+    con.execute("DELETE FROM demo_data_blobs WHERE demo_id = ?", (demo_id,))
+    if ticks_by_round or grenades_by_round or events_by_round:
         con.execute(
-            "INSERT INTO demo_ticks (demo_id, ticks_data) VALUES (?,?)",
-            (demo_id, _blob(ticks_by_round)),
-        )
-
-    # ---- demo_grenades ----
-    con.execute("DELETE FROM demo_grenades WHERE demo_id = ?", (demo_id,))
-    if grenades_by_round:
-        con.execute(
-            "INSERT INTO demo_grenades (demo_id, grenades_data) VALUES (?,?)",
-            (demo_id, _blob(grenades_by_round)),
+            "INSERT INTO demo_data_blobs (demo_id, ticks_data, grenades_data, events_data)"
+            " VALUES (?,?,?,?)",
+            (
+                demo_id,
+                _blob(ticks_by_round)    if ticks_by_round    else None,
+                _blob(grenades_by_round) if grenades_by_round else None,
+                _blob(events_by_round)   if events_by_round   else None,
+            ),
         )
 
     # ---- demo_cosmetics ----
@@ -622,11 +619,8 @@ def _db_get(demo_id: str):
     cosmetic_rows  = con.execute(
         "SELECT * FROM demo_cosmetics WHERE demo_id = ? ORDER BY id", (demo_id,)
     ).fetchall()
-    ticks_row      = con.execute(
-        "SELECT ticks_data FROM demo_ticks WHERE demo_id = ?", (demo_id,)
-    ).fetchone()
-    grenades_row   = con.execute(
-        "SELECT grenades_data FROM demo_grenades WHERE demo_id = ?", (demo_id,)
+    blob_row       = con.execute(
+        "SELECT ticks_data, grenades_data, events_data FROM demo_data_blobs WHERE demo_id = ?", (demo_id,)
     ).fetchone()
     con.close()
 
@@ -705,17 +699,19 @@ def _db_get(demo_id: str):
         "swag_breakdown": _cosmetics_to_swag(cosmetic_rows),
     }
 
-    if ticks_row and ticks_row["ticks_data"]:
-        ticks_by_round = {int(k): v for k, v in _unblob(ticks_row["ticks_data"]).items()}
-        grenades_by_round = {}
-        if grenades_row and grenades_row["grenades_data"]:
-            grenades_by_round = {int(k): v for k, v in _unblob(grenades_row["grenades_data"]).items()}
+    if blob_row and blob_row["ticks_data"]:
+        ticks_by_round    = {int(k): v for k, v in _unblob(blob_row["ticks_data"]).items()}
+        grenades_by_round = {int(k): v for k, v in _unblob(blob_row["grenades_data"]).items()} if blob_row["grenades_data"] else {}
+        events_by_round   = {int(k): v for k, v in _unblob(blob_row["events_data"]).items()}   if blob_row["events_data"]   else {}
         if len(_session_cache) >= MAX_SESSIONS:
             _session_cache.popitem(last=False)
+        _stored = DEMOS_DIR / f"{demo_id}.dem"
         _session_cache[demo_id] = {
             "ticks":    ticks_by_round,
             "grenades": grenades_by_round,
+            "events":   events_by_round,
             "map_name": row["map"],
+            "dem_path": str(_stored) if _stored.exists() else None,
         }
         data["has_ticks"] = True
 
@@ -725,7 +721,7 @@ def _db_get(demo_id: str):
 def _db_delete(demo_id: str) -> bool:
     con = sqlite3.connect(DB_PATH)
     for tbl in ("demo_rounds", "demo_kills", "demo_scoreboard", "demo_aim",
-                "demo_aim_weapons", "demo_aim_hitgroups", "demo_ticks", "demo_grenades", "demo_cosmetics"):
+                "demo_aim_weapons", "demo_aim_hitgroups", "demo_data_blobs", "demo_cosmetics"):
         con.execute(f"DELETE FROM {tbl} WHERE demo_id = ?", (demo_id,))
     cur = con.execute("DELETE FROM demos WHERE id = ?", (demo_id,))
     con.commit()
@@ -849,6 +845,7 @@ def extract_grenades(dem_path, ticks_by_round: dict) -> dict:
                 x_col    = next((c for c in ["x", "X"] if c in cols), None)
                 y_col    = next((c for c in ["y", "Y"] if c in cols), None)
                 rnum_col = "round_num" if "round_num" in cols else None
+                name_col = next((c for c in ["user_name", "player_name", "name", "attacker_name"] if c in cols), None)
                 if not tick_col or not x_col or not y_col:
                     log.debug("extract_grenades: %s missing pos columns — %s", event_name, cols)
                     continue
@@ -867,6 +864,7 @@ def extract_grenades(dem_path, ticks_by_round: dict) -> dict:
                             "y":         y,
                             "from_tick": tick,
                             "to_tick":   tick + duration,
+                            "player":    str(row[name_col]) if name_col else None,
                         })
                     except Exception:
                         continue
@@ -878,6 +876,443 @@ def extract_grenades(dem_path, ticks_by_round: dict) -> dict:
 
     total = sum(len(v) for v in result.values())
     log.info("extract_grenades: %d grenades across %d rounds", total, len(result))
+    return result
+
+
+# Friendly display names for bought items
+_BUY_ITEM_NAMES = {
+    "item_kevlar":          "Kevlar",
+    "item_assaultsuit":     "Kevlar + Helmet",
+    "item_defuser":         "Defuse Kit",
+    "weapon_ak47":          "AK-47",
+    "weapon_m4a1":          "M4A4",
+    "weapon_m4a1_silencer": "M4A1-S",
+    "weapon_awp":           "AWP",
+    "weapon_deagle":        "Desert Eagle",
+    "weapon_usp_silencer":  "USP-S",
+    "weapon_glock":         "Glock",
+    "weapon_p250":          "P250",
+    "weapon_fiveseven":     "Five-SeveN",
+    "weapon_tec9":          "Tec-9",
+    "weapon_cz75a":         "CZ75-Auto",
+    "weapon_revolver":      "R8 Revolver",
+    "weapon_mp9":           "MP9",
+    "weapon_mp5sd":         "MP5-SD",
+    "weapon_mac10":         "MAC-10",
+    "weapon_mp7":           "MP7",
+    "weapon_p90":           "P90",
+    "weapon_bizon":         "PP-Bizon",
+    "weapon_ump45":         "UMP-45",
+    "weapon_famas":         "FAMAS",
+    "weapon_galilar":       "Galil AR",
+    "weapon_sg556":         "SG 553",
+    "weapon_aug":           "AUG",
+    "weapon_ssg08":         "SSG 08",
+    "weapon_g3sg1":         "G3SG1",
+    "weapon_scar20":        "SCAR-20",
+    "weapon_xm1014":        "XM1014",
+    "weapon_nova":          "Nova",
+    "weapon_sawedoff":      "Sawed-Off",
+    "weapon_mag7":          "MAG-7",
+    "weapon_m249":          "M249",
+    "weapon_negev":         "Negev",
+    "weapon_flashbang":     "Flashbang",
+    "weapon_smokegrenade":  "Smoke Grenade",
+    "weapon_hegrenade":     "HE Grenade",
+    "weapon_molotov":       "Molotov",
+    "weapon_incgrenade":    "Incendiary Grenade",
+    "weapon_decoy":         "Decoy Grenade",
+}
+
+# Items that are never purchased — filter these out of item_pickup events
+_NON_PURCHASE_ITEMS = {
+    "knife", "knife_t", "knife_ct", "knife_ghost",
+    "c4", "healthshot", "taser",
+    "glock", "hkp2000", "usp_silencer",  # default pistols given free at round start
+}
+
+def _extract_buy_from_item_pickup(parser, round_ranges: dict) -> dict:
+    """
+    Primary buy-event fallback using item_pickup events.
+    item_pickup fires for every item a player receives — purchases, floor picks, spawns.
+    We filter to purchases by:
+      1. Excluding silent=True pickups (round-start loadout equips)
+      2. Excluding known non-purchasable items (knife, c4, default pistols)
+      3. Cross-referencing with cash_spent_this_round tick data: a pickup is a
+         purchase if cash_spent increased at/near the same tick for that player.
+    Returns {round_num: [{type, tick, player, item}]}.
+    """
+    import pandas as pd
+
+    result = {}
+    try:
+        # ── Parse item_pickup events ──────────────────────────────────────────
+        rows = parser.parse_events(["item_pickup"])
+        if not rows:
+            return {}
+        raw = rows[0]
+        pickup_df = raw[1] if isinstance(raw, tuple) else raw
+        if pickup_df is None or pickup_df.empty:
+            return {}
+
+        cols = list(pickup_df.columns)
+        name_col  = next((c for c in ["user_name", "player_name", "name"] if c in cols), None)
+        item_col  = next((c for c in ["item", "weapon", "weapon_name"] if c in cols), None)
+        rnum_col  = "round_num" if "round_num" in cols else None
+        silent_col = "silent" if "silent" in cols else None
+
+        if not name_col or not item_col:
+            log.info("_extract_buy_from_item_pickup: missing name/item cols — %s", cols)
+            return {}
+
+        # Filter: drop silent equips and non-purchasable items
+        if silent_col:
+            pickup_df = pickup_df[pickup_df[silent_col] == False]  # noqa: E712
+        pickup_df = pickup_df[~pickup_df[item_col].isin(_NON_PURCHASE_ITEMS)]
+
+        if pickup_df.empty:
+            return {}
+
+        # ── Parse cash_spent_this_round ticks to confirm purchases ────────────
+        # Build a set of (player, tick) where cash_spent increased — these are buys
+        purchase_ticks: set[tuple] = set()
+        try:
+            tdf = parser.parse_ticks(["cash_spent_this_round"])
+            if tdf is not None and not tdf.empty:
+                tcols    = list(tdf.columns)
+                tname_col = next((c for c in ["name", "player_name", "user_name"] if c in tcols), None)
+                if tname_col and "cash_spent_this_round" in tcols:
+                    for player, pdf in tdf.groupby(tname_col):
+                        pdf = pdf.sort_values("tick")
+                        prev_spent = None
+                        prev_rnum  = None
+                        for _, trow in pdf.iterrows():
+                            try:
+                                spent = int(trow["cash_spent_this_round"]) if pd.notna(trow["cash_spent_this_round"]) else 0
+                                rnum  = int(trow["round_num"]) if "round_num" in tcols and pd.notna(trow.get("round_num")) else None
+                            except (ValueError, TypeError):
+                                continue
+                            if prev_spent is None or (rnum != prev_rnum and spent < prev_spent):
+                                prev_spent = spent
+                                prev_rnum  = rnum
+                                continue
+                            if spent > prev_spent:
+                                # Cash increased — record this tick ±64 ticks as a purchase window
+                                tick = int(trow["tick"])
+                                for dt in range(-64, 65):
+                                    purchase_ticks.add((str(player), tick + dt))
+                            prev_spent = spent
+                            prev_rnum  = rnum
+        except Exception as e:
+            log.debug("_extract_buy_from_item_pickup: cash tick parse failed — %s", e)
+
+        # ── Assign each pickup to a round ─────────────────────────────────────
+        def _tick_to_round(tick):
+            for rnum, (start, end) in round_ranges.items():
+                if start - 5000 <= tick <= end + 1000:
+                    return rnum
+            return None
+
+        for _, row in pickup_df.iterrows():
+            try:
+                tick   = int(row["tick"])
+                player = str(row[name_col])
+                raw_item = str(row[item_col]).lower()
+
+                # If we have cash data, only include confirmed purchases
+                if purchase_ticks and (player, tick) not in purchase_ticks:
+                    continue
+
+                rnum = int(row[rnum_col]) if rnum_col and pd.notna(row.get(rnum_col)) else _tick_to_round(tick)
+                if rnum is None:
+                    continue
+                # Reject pickups beyond the round's last frame tick (next-round bleed)
+                _rstart, _rend = round_ranges.get(rnum, (0, 0))
+                if tick > _rend:
+                    continue
+
+                display = _BUY_ITEM_NAMES.get(
+                    f"weapon_{raw_item}",
+                    _BUY_ITEM_NAMES.get(
+                        f"item_{raw_item}",
+                        _BUY_ITEM_NAMES.get(
+                            raw_item,
+                            raw_item.replace("_", " ").title()
+                        )
+                    )
+                )
+
+                result.setdefault(int(rnum), []).append({
+                    "type":   "buy",
+                    "tick":   tick,
+                    "player": player,
+                    "item":   display,
+                })
+            except Exception as _row_e:
+                log.debug("_extract_buy_from_item_pickup: row error — %s", _row_e)
+                continue
+
+    except Exception as e:
+        log.warning("_extract_buy_from_item_pickup failed: %s", e)
+
+    return result
+
+
+def extract_shots(dem_path, ticks_by_round: dict) -> dict:
+    """
+    Returns {round_num: [{tick, player, x, y, yaw}]} from weapon_fire events.
+    Excludes knife/grenade non-hitscan weapons.
+    """
+    if not dem_path:
+        return {}
+    _NON_TRACER = {"weapon_knife","weapon_knife_t","weapon_knife_ct","weapon_knife_ghost",
+                   "weapon_hegrenade","weapon_smokegrenade","weapon_flashbang",
+                   "weapon_molotov","weapon_incgrenade","weapon_decoy","weapon_c4","weapon_taser"}
+    # Build round tick ranges for assignment
+    round_ranges = {}
+    for rnum, frames in ticks_by_round.items():
+        if frames:
+            ticks = [f["t"] for f in frames]
+            round_ranges[rnum] = (min(ticks), max(ticks))
+
+    def _tick_to_round(tick):
+        for rnum, (start, end) in round_ranges.items():
+            if start - 5000 <= tick <= end + 1000:
+                return rnum
+        return None
+
+    result = {}
+    try:
+        from demoparser2 import DemoParser
+        parser = DemoParser(str(dem_path))
+        df = parser.parse_event("weapon_fire", player=["name", "yaw", "X", "Y"])
+        if df is None or (hasattr(df, "empty") and df.empty):
+            return {}
+        import pandas as pd
+        if isinstance(df, list):
+            df = df[0][1] if df and isinstance(df[0], tuple) else pd.DataFrame(df)
+        cols = list(df.columns)
+        for _, row in df.iterrows():
+            try:
+                weapon = str(row.get("weapon","")).lower()
+                if weapon in _NON_TRACER:
+                    continue
+                tick   = int(row["tick"])
+                player = str(row.get("user_name") or row.get("name","?"))
+                x      = float(row["user_X"])
+                y      = float(row["user_Y"])
+                yaw    = float(row["user_yaw"])
+                rnum   = _tick_to_round(tick)
+                if rnum is None:
+                    continue
+                result.setdefault(int(rnum), []).append({
+                    "tick": tick, "player": player,
+                    "x": x, "y": y, "yaw": yaw,
+                })
+            except Exception:
+                continue
+    except Exception as e:
+        log.warning("extract_shots failed: %s", e)
+    return result
+
+
+def extract_events(dem_path, ticks_by_round: dict) -> dict:
+    """
+    Returns {round_num: [{type, tick, player, item?}]}.
+    Parses player_buy, bomb_planted, bomb_defused via demoparser2.
+    Gracefully returns {} if demoparser2 is unavailable.
+    """
+    if not dem_path:
+        return {}
+
+    round_ranges = {}
+    for rnum, frames in ticks_by_round.items():
+        if frames:
+            ticks = [f["t"] for f in frames]
+            round_ranges[rnum] = (min(ticks), max(ticks))
+
+    def _tick_to_round(tick, buy_phase=False):
+        # buy_phase=True extends the window backwards to cover freeze time
+        # (~15s = ~1920 ticks at 128hz; use 5000 to be safe across tickrates)
+        lookback = 5000 if buy_phase else 0
+        for rnum, (start, end) in round_ranges.items():
+            if start - lookback <= tick <= end + 1000:
+                return rnum
+        return None
+
+    result = {}
+    try:
+        from demoparser2 import DemoParser
+        parser = DemoParser(str(dem_path))
+
+        # ---- Buy events ----
+        try:
+            _rows = parser.parse_events(["player_buy"])
+            buy_df = None
+            if _rows:
+                _item = _rows[0]
+                buy_df = _item[1] if isinstance(_item, tuple) else _item
+
+            if buy_df is None or buy_df.empty:
+                # CS2 demos use 'item_purchase' instead of 'player_buy'
+                _item_purchase_df = None
+                try:
+                    _ip_rows = parser.parse_events(["item_purchase"])
+                    if _ip_rows:
+                        _ip_item = _ip_rows[0]
+                        _item_purchase_df = _ip_item[1] if isinstance(_ip_item, tuple) else _ip_item
+                except Exception as _ip_e:
+                    log.debug("extract_events: item_purchase parse failed — %s", _ip_e)
+
+                if _item_purchase_df is not None and not _item_purchase_df.empty:
+                    _ip_cols = list(_item_purchase_df.columns)
+                    log.info("extract_events: item_purchase — %d rows, cols=%s", len(_item_purchase_df), _ip_cols)
+                    _ip_skipped = 0
+                    for _, _ip_row in _item_purchase_df.iterrows():
+                        try:
+                            # Skip items that were sold back
+                            if "was_sold" in _ip_cols and _ip_row.get("was_sold"):
+                                continue
+                            _ip_tick   = int(_ip_row["tick"])
+                            _ip_player = str(_ip_row["name"]) if "name" in _ip_cols else "?"
+                            _ip_raw    = str(_ip_row["item_name"]).lower() if "item_name" in _ip_cols else ""
+                            _ip_rnum   = _tick_to_round(_ip_tick, buy_phase=True)
+                            if _ip_rnum is None:
+                                _ip_skipped += 1
+                                continue
+                            # Reject buys whose tick exceeds the round's last frame — these
+                            # are next-round freeze-phase buys captured by the +1000 tolerance.
+                            _rstart, _rend = round_ranges.get(_ip_rnum, (0, 0))
+                            if _ip_tick > _rend:
+                                _ip_skipped += 1
+                                continue
+                            _ip_display = _BUY_ITEM_NAMES.get(
+                                _ip_raw,
+                                _ip_raw.replace("weapon_", "").replace("item_", "").replace("_", " ").title()
+                            )
+                            result.setdefault(int(_ip_rnum), []).append({
+                                "type":   "buy",
+                                "tick":   _ip_tick,
+                                "player": _ip_player,
+                                "item":   _ip_display,
+                            })
+                        except Exception as _ip_row_e:
+                            log.debug("extract_events: item_purchase row error — %s", _ip_row_e)
+                            _ip_skipped += 1
+                    _ip_total = sum(1 for evts in result.values() for e in evts if e["type"] == "buy")
+                    log.info("extract_events: item_purchase added %d events, skipped %d rows", _ip_total, _ip_skipped)
+                else:
+                    log.info("extract_events: player_buy/item_purchase returned no data — falling back to item_pickup")
+                    _buy_from_pickup = _extract_buy_from_item_pickup(parser, round_ranges)
+                    for rnum, evts in _buy_from_pickup.items():
+                        result.setdefault(rnum, []).extend(evts)
+                    log.info("extract_events: item_pickup fallback added %d buy events across %d rounds",
+                             sum(len(v) for v in _buy_from_pickup.values()), len(_buy_from_pickup))
+            else:
+                cols     = list(buy_df.columns)
+                name_col = next((c for c in ["user_name", "player_name", "name"] if c in cols), None)
+                item_col = next((c for c in [
+                    "weapon", "item", "weaponItemId", "weapon_name", "weapon_id",
+                    "weaponId", "item_name", "defindex", "wep_type",
+                ] if c in cols), None)
+                if item_col is None:
+                    skip_cols = {"tick", "name", "player_name", "user_name", "steamid", "round_num"}
+                    candidates = [c for c in cols if c not in skip_cols]
+                    item_col = candidates[0] if candidates else None
+                rnum_col = "round_num" if "round_num" in cols else None
+                log.info("extract_events: player_buy %d rows — name_col=%s item_col=%s rnum_col=%s cols=%s",
+                         len(buy_df), name_col, item_col, rnum_col, cols)
+                skipped = 0
+                for _, row in buy_df.iterrows():
+                    try:
+                        tick = int(row["tick"])
+                        rnum = None
+                        if rnum_col:
+                            try:
+                                rnum = int(row[rnum_col])
+                            except (ValueError, TypeError):
+                                pass
+                        if rnum is None:
+                            rnum = _tick_to_round(tick, buy_phase=True)
+                        if rnum is None:
+                            skipped += 1
+                            continue
+                        raw_item = str(row[item_col]).lower() if item_col else ""
+                        display  = _BUY_ITEM_NAMES.get(raw_item, raw_item.replace("weapon_", "").replace("item_", "").replace("_", " ").title())
+                        player   = str(row[name_col]) if name_col else "?"
+                        result.setdefault(int(rnum), []).append({
+                            "type":   "buy",
+                            "tick":   tick,
+                            "player": player,
+                            "item":   display,
+                        })
+                    except Exception as _row_e:
+                        log.warning("extract_events: buy row error — %s", _row_e)
+                        skipped += 1
+                buy_total = sum(1 for evts in result.values() for e in evts if e["type"] == "buy")
+                log.info("extract_events: player_buy added %d events, skipped %d rows", buy_total, skipped)
+        except Exception as e:
+            log.warning("extract_events: player_buy failed — %s", e)
+
+        # ---- Bomb planted ----
+        try:
+            rows = parser.parse_events(["bomb_planted"], other=["round_num"])
+            if rows:
+                item = rows[0]
+                df = item[1] if isinstance(item, tuple) else item
+                if df is not None and not df.empty:
+                    cols = list(df.columns)
+                    name_col = next((c for c in ["user_name", "player_name", "name"] if c in cols), None)
+                    rnum_col = "round_num" if "round_num" in cols else None
+                    for _, row in df.iterrows():
+                        try:
+                            tick  = int(row["tick"])
+                            rnum  = int(row[rnum_col]) if rnum_col else _tick_to_round(tick)
+                            if rnum is None:
+                                continue
+                            result.setdefault(int(rnum), []).append({
+                                "type":   "plant",
+                                "tick":   tick,
+                                "player": str(row[name_col]) if name_col else "?",
+                            })
+                        except Exception:
+                            continue
+        except Exception as e:
+            log.debug("extract_events: bomb_planted failed — %s", e)
+
+        # ---- Bomb defused ----
+        try:
+            rows = parser.parse_events(["bomb_defused"], other=["round_num"])
+            if rows:
+                item = rows[0]
+                df = item[1] if isinstance(item, tuple) else item
+                if df is not None and not df.empty:
+                    cols = list(df.columns)
+                    name_col = next((c for c in ["user_name", "player_name", "name"] if c in cols), None)
+                    rnum_col = "round_num" if "round_num" in cols else None
+                    for _, row in df.iterrows():
+                        try:
+                            tick  = int(row["tick"])
+                            rnum  = int(row[rnum_col]) if rnum_col else _tick_to_round(tick)
+                            if rnum is None:
+                                continue
+                            result.setdefault(int(rnum), []).append({
+                                "type":   "defuse",
+                                "tick":   tick,
+                                "player": str(row[name_col]) if name_col else "?",
+                            })
+                        except Exception:
+                            continue
+        except Exception as e:
+            log.debug("extract_events: bomb_defused failed — %s", e)
+
+    except ImportError:
+        log.debug("extract_events: demoparser2 not available — skipping")
+    except Exception as e:
+        log.warning("extract_events failed: %s", e)
+
+    total = sum(len(v) for v in result.values())
+    log.info("extract_events: %d events across %d rounds", total, len(result))
     return result
 
 
@@ -1111,12 +1546,15 @@ def _wear_tier(f: float) -> str:
 
 
 _SKIN_NAMES: dict = {}
+_SKIN_IDS:   dict = {}   # paint_index (str) -> skin id (e.g. "skin-f64cdaac0b90")
 _SKIN_NAMES_LOADED = False
+
+_BASE_WEAPON_IDS: dict = {}  # def_index (int) -> base weapon image id (e.g. "base_weapon-weapon_ak47")
 
 
 def _load_skin_names() -> dict:
-    """Build paint_index -> skin name dict from struct_db/skins.json."""
-    global _SKIN_NAMES, _SKIN_NAMES_LOADED
+    """Build paint_index -> skin name and paint_index -> skin id dicts from struct_db/skins.json."""
+    global _SKIN_NAMES, _SKIN_IDS, _SKIN_NAMES_LOADED
     if _SKIN_NAMES_LOADED:
         return _SKIN_NAMES
     _SKIN_NAMES_LOADED = True
@@ -1129,16 +1567,44 @@ def _load_skin_names() -> dict:
             skins = json.load(f)
         def _strip_prefix(name: str) -> str:
             return name.split(" | ", 1)[-1] if name and " | " in name else name
-        _SKIN_NAMES = {
-            str(item["paint_index"]): _strip_prefix(item.get("name", ""))
-            for item in skins
-            if isinstance(item, dict) and item.get("paint_index")
-        }
+        _SKIN_NAMES = {}
+        _SKIN_IDS   = {}
+        for item in skins:
+            if not isinstance(item, dict) or not item.get("paint_index"):
+                continue
+            pi         = str(item["paint_index"])
+            weapon_id  = str(item.get("weapon", {}).get("weapon_id", ""))
+            _SKIN_NAMES[pi] = _strip_prefix(item.get("name", ""))
+            if item.get("id"):
+                # Key by (paint_index, weapon_id) to avoid collisions where the
+                # same paint design exists on multiple weapon types (113 such cases).
+                _SKIN_IDS[f"{pi}:{weapon_id}"] = item["id"]
         log.info("skin names: loaded %d entries from skins.json", len(_SKIN_NAMES))
     except Exception as e:
         log.warning("skin names: failed to load from skins.json: %s", e)
         _SKIN_NAMES = {}
+        _SKIN_IDS   = {}
     return _SKIN_NAMES
+
+
+def _load_base_weapon_ids() -> None:
+    """Build def_index -> base weapon image id from struct_db/base_weapons.json."""
+    global _BASE_WEAPON_IDS
+    p = STRUCT_DB_DIR / "base_weapons.json"
+    if not p.exists():
+        log.warning("base weapons: base_weapons.json not found at %s", p)
+        return
+    try:
+        with open(p, encoding="utf-8") as f:
+            items = json.load(f)
+        _BASE_WEAPON_IDS = {
+            item["def_index"]: item["id"]
+            for item in items
+            if isinstance(item, dict) and item.get("def_index") and item.get("id")
+        }
+        log.info("base weapons: loaded %d entries from base_weapons.json", len(_BASE_WEAPON_IDS))
+    except Exception as e:
+        log.warning("base weapons: failed to load from base_weapons.json: %s", e)
 
 
 def extract_cosmetics(dem_path: str) -> list:
@@ -1600,12 +2066,17 @@ def parse_demo(dem_path: str) -> dict:
     session_id = str(uuid.uuid4())
     ticks_by_round    = extract_ticks(demo, dem_path)
     grenades_by_round = extract_grenades(dem_path, ticks_by_round)
+    events_by_round   = extract_events(dem_path, ticks_by_round)
+    shots_by_round    = extract_shots(dem_path, ticks_by_round)
     if len(_session_cache) >= MAX_SESSIONS:
         _session_cache.popitem(last=False)
     _session_cache[session_id] = {
         "ticks":    ticks_by_round,
         "grenades": grenades_by_round,
+        "events":   events_by_round,
+        "shots":    shots_by_round,
         "map_name": header["map"],
+        "dem_path": str(dem_path) if dem_path else None,
     }
 
     return {
@@ -1652,10 +2123,20 @@ def api_parse():
     try:
         data = parse_demo(tmp_path)
         data["filename"] = f.filename
-        cached = _session_cache.get(data["session_id"], {})
+        session_id = data["session_id"]
+        cached = _session_cache.get(session_id, {})
         ticks    = cached.get("ticks", {})
         grenades = cached.get("grenades", {})
-        _db_save(data["session_id"], f.filename, data["header"]["map"], data, ticks, grenades)
+        events   = cached.get("events", {})
+        _db_save(session_id, f.filename, data["header"]["map"], data, ticks, grenades, events)
+
+        # Persist the .dem file so re-parse endpoints (tracers etc.) can reuse it
+        stored_path = DEMOS_DIR / f"{session_id}.dem"
+        import shutil
+        shutil.copy2(tmp_path, stored_path)
+        if session_id in _session_cache:
+            _session_cache[session_id]["dem_path"] = str(stored_path)
+
         elapsed = time.monotonic() - _t0
         log.info("parse: completed %s — map=%s rounds=%s ticks=%s (%.2fs)",
                  f.filename, data["header"].get("map"),
@@ -1679,7 +2160,82 @@ def api_ticks(session_id, round_num):
         return jsonify({"error": "Session expired — please re-upload the demo"}), 404
     frames   = session["ticks"].get(round_num, [])
     grenades = session.get("grenades", {}).get(round_num, [])
-    return jsonify({"frames": frames, "count": len(frames), "grenades": grenades})
+    events   = session.get("events",   {}).get(round_num, [])
+    # Lazy-parse shots if missing (session loaded from DB cache before this feature existed)
+    if "shots" not in session:
+        dem_path = session.get("dem_path") or (
+            str(DEMOS_DIR / f"{session_id}.dem")
+            if (DEMOS_DIR / f"{session_id}.dem").exists() else None
+        )
+        session["shots"] = extract_shots(dem_path, session["ticks"]) if dem_path else {}
+    shots = session["shots"].get(round_num, [])
+    return jsonify({"frames": frames, "count": len(frames), "grenades": grenades, "events": events, "shots": shots})
+
+
+@app.route("/api/probe_bullets/<session_id>/<int:round_num>")
+def api_probe_bullets(session_id, round_num):
+    """Probe endpoint: try parsing bullet_impact for one round and report what comes back."""
+    session = _session_cache.get(session_id)
+    # If not in memory cache, check if the stored .dem exists directly
+    stored = DEMOS_DIR / f"{session_id}.dem"
+    if session:
+        dem_path = session.get("dem_path") or (str(stored) if stored.exists() else None)
+    elif stored.exists():
+        dem_path = str(stored)
+    else:
+        return jsonify({"error": "Session expired and no stored .dem found"}), 404
+    if not dem_path:
+        return jsonify({"error": "No dem_path available"}), 404
+    try:
+        from demoparser2 import DemoParser
+        parser = DemoParser(dem_path)
+
+        # weapon_fire with yaw requested via player prop
+        rows = None
+        try:
+            rows = parser.parse_event("weapon_fire", player=["name", "yaw", "pitch", "X", "Y"])
+        except Exception as e1:
+            return jsonify({"error": f"weapon_fire parse failed: {e1}"})
+
+        if rows is None or (hasattr(rows, '__len__') and len(rows) == 0):
+            return jsonify({"error": "weapon_fire returned no data"})
+
+        # Also probe parse_ticks for yaw to confirm it's available that way
+        yaw_tick_cols = []
+        try:
+            tdf = parser.parse_ticks(["yaw", "pitch"])
+            if tdf is not None:
+                yaw_tick_cols = list(tdf.columns)
+        except Exception as ey:
+            yaw_tick_cols = [f"error: {ey}"]
+
+        if rows is None or (hasattr(rows, '__len__') and len(rows) == 0):
+            return jsonify({"error": "bullet_impact returned no data"})
+
+        # rows may be a DataFrame or list of (name, df) tuples
+        import pandas as pd
+        if isinstance(rows, list):
+            df = rows[0][1] if rows and isinstance(rows[0], tuple) else pd.DataFrame(rows)
+        else:
+            df = rows
+
+        if df is None or df.empty:
+            return jsonify({"error": "bullet_impact DataFrame is empty"})
+
+        # Filter to the requested round if round_num column exists
+        cols = list(df.columns)
+        round_df = df[df["round"] == round_num] if "round" in cols else \
+                   df[df["round_num"] == round_num] if "round_num" in cols else df
+
+        return jsonify({
+            "columns": cols,
+            "total_rows": len(df),
+            "round_rows": len(round_df),
+            "sample": round_df.head(10).to_dict(orient="records"),
+            "yaw_tick_cols": yaw_tick_cols,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/map_info/<map_name>")
@@ -1707,6 +2263,12 @@ def api_download_maps():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/images/<path:filename>")
+def serve_image(filename):
+    images_dir = Path(__file__).parent / "images"
+    return send_from_directory(str(images_dir), filename)
+
+
 @app.route("/api/map_image/<map_name>")
 def api_map_image(map_name):
     import awpy.data
@@ -1729,6 +2291,126 @@ def api_demos_get(demo_id):
     if data is None:
         return jsonify({"error": "Demo not found"}), 404
     return jsonify(data)
+
+
+@app.route("/api/demos/<demo_id>/loadout")
+def api_demos_loadout(demo_id):
+    """Get player loadout data for a demo."""
+    data = _db_get(demo_id)
+    if data is None:
+        return jsonify({"error": "Demo not found"}), 404
+    
+    # Extract loadout information from the demo data
+    loadout_data = {
+        "demo_id": demo_id,
+        "map": data.get("header", {}).get("map", "Unknown Map"),
+        "filename": data.get("filename", "Unknown Demo"),
+        "players": []
+    }
+    
+    # Connect to database to get cosmetics data
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+
+    try:
+        # Get all cosmetics for this demo
+        cosmetics = con.execute(
+            "SELECT * FROM demo_cosmetics WHERE demo_id = ? ORDER BY steamid, player_name",
+            (demo_id,)
+        ).fetchall()
+        
+        # Group cosmetics by player
+        player_cosmetics = {}
+        for cosmetic in cosmetics:
+            key = (cosmetic["steamid"], cosmetic["player_name"])
+            if key not in player_cosmetics:
+                player_cosmetics[key] = {
+                    "name": cosmetic["player_name"],
+                    "steamid": cosmetic["steamid"],
+                    "team": cosmetic["team"],
+                    "kills": 0,
+                    "deaths": 0,
+                    "assists": 0,
+                    "kd_ratio": 0.0,
+                    "headshot_pct": 0.0,
+                    "total_damage": 0,
+                    "weapons": [],
+                    "agent": None,
+                    "skins": []
+                }
+            
+            p = player_cosmetics[key]
+            
+            # Add scoreboard data if available
+            if data.get("scoreboard"):
+                for scoreboard_player in data["scoreboard"]:
+                    if scoreboard_player["name"] == cosmetic["player_name"] and scoreboard_player["steamid"] == cosmetic["steamid"]:
+                        p["kills"] = scoreboard_player.get("kills", 0)
+                        p["deaths"] = scoreboard_player.get("deaths", 0)
+                        p["assists"] = scoreboard_player.get("assists", 0)
+                        p["kd_ratio"] = scoreboard_player.get("kd", 0.0)
+                        p["headshot_pct"] = scoreboard_player.get("hs_pct", 0.0)
+                        p["total_damage"] = scoreboard_player.get("dmg", 0)
+            
+            # Process cosmetics
+            if cosmetic["is_agent"]:
+                p["agent"] = {
+                    "def_index": cosmetic["def_index"],
+                    "item_name": cosmetic["item_name"],
+                    "skin_name": cosmetic["skin_name"],
+                    "paint_index": cosmetic["paint_index"],
+                    "paint_seed": cosmetic["paint_seed"],
+                    "wear": cosmetic["wear"],
+                    "wear_tier": cosmetic["wear_tier"],
+                    "custom_name": cosmetic["custom_name"],
+                    "stattrak": cosmetic["stattrak"],
+                    "side": cosmetic["side"]
+                }
+            else:
+                # Add to skins list
+                p["skins"].append({
+                    "def_index": cosmetic["def_index"],
+                    "item_name": cosmetic["item_name"],
+                    "skin_name": cosmetic["skin_name"],
+                    "paint_index": cosmetic["paint_index"],
+                    "paint_seed": cosmetic["paint_seed"],
+                    "wear": cosmetic["wear"],
+                    "wear_tier": cosmetic["wear_tier"],
+                    "custom_name": cosmetic["custom_name"],
+                    "stattrak": cosmetic["stattrak"],
+                    "side": cosmetic["side"],
+                    "skin_image_id":    _SKIN_IDS.get(f"{cosmetic['paint_index']}:{cosmetic['def_index']}") if cosmetic["paint_index"] else None,
+                    "base_weapon_key": _BASE_WEAPON_IDS.get(cosmetic["def_index"]),
+                })
+        
+        # Convert to list for JSON serialization
+        loadout_data["players"] = list(player_cosmetics.values())
+        
+        # Add weapon stats from aim breakdown if available
+        if data.get("aim_breakdown"):
+            for aim_player in data["aim_breakdown"]:
+                key = (None, aim_player["name"])  # Use name as key for lookup
+                for player in loadout_data["players"]:
+                    if player["name"] == aim_player["name"]:
+                        # Add weapon stats from aim breakdown
+                        if aim_player.get("weapons"):
+                            for weapon in aim_player["weapons"]:
+                                player["weapons"].append({
+                                    "weapon": weapon["weapon"],
+                                    "kills": weapon.get("kills", 0),
+                                    "shots": weapon.get("shots", 0),
+                                    "hits": weapon.get("hits", 0),
+                                    "dmg": weapon.get("dmg", 0),
+                                    "hs_kills": weapon.get("hs_kills", 0)
+                                })
+        
+    except Exception as e:
+        log.error(f"Error in loadout API: {e}")
+        return jsonify({"error": "Failed to process loadout data"}), 500
+    finally:
+        con.close()
+    
+    return jsonify(loadout_data)
 
 
 @app.route("/api/demos/<demo_id>", methods=["DELETE"])
@@ -1771,6 +2453,11 @@ def api_admin_query():
         return jsonify({"error": str(e)}), 400
 
 
+@app.route("/api/admin/schema_map")
+def api_admin_schema_map():
+    return send_file(str(STRUCT_DB_DIR / "schema_map.html"), mimetype="text/html")
+
+
 @app.route("/api/admin/schema")
 def api_admin_schema():
     con = sqlite3.connect(DB_PATH)
@@ -1788,6 +2475,7 @@ def api_admin_schema():
 
 
 _load_skin_names()
+_load_base_weapon_ids()
 
 log.info("startup complete — cs2demviewer ready")
 

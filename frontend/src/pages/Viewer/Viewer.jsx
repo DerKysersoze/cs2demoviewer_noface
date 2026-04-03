@@ -5,25 +5,45 @@ import { demosApi } from '../../api/demos'
 import SiteHeader    from '../../components/SiteHeader'
 import Scoreboard    from './tabs/Scoreboard'
 import Timeline      from './tabs/Timeline'
-import Rounds        from './tabs/Rounds'
-import KillFeed      from './tabs/KillFeed'
 import AimBreakdown  from './tabs/AimBreakdown'
 import SwagBreakdown from './tabs/SwagBreakdown'
 import MapView       from './tabs/MapView'
+import MapViewV2     from './tabs/MapViewV2'
+import { LoadoutPanel } from '../Loadout/Loadout'
 import styles from './Viewer.module.css'
 
 const TABS = [
   { id: 'scoreboard', label: 'Scoreboard' },
   { id: 'timeline',   label: 'Timeline' },
-  { id: 'map',        label: 'Visual Timeline' },
-  { id: 'rounds',     label: 'Rounds' },
-  { id: 'killfeed',   label: 'Kill Feed' },
+  { id: 'map',        label: '2D Replay' },
   { id: 'aim',        label: 'Aim Breakdown' },
+  { id: 'loadout',    label: 'Loadout' },
 ]
+
+function ViewerToggle({ isV2, onToggle }) {
+  return (
+    <div className={styles.viewerToggle}>
+      <span className={`${styles.viewerToggleLabel}${!isV2 ? ' ' + styles.active : ''}`}>Legacy</span>
+      <div className={`${styles.toggleTrack}${isV2 ? ' ' + styles.on : ''}`} onClick={onToggle}>
+        <div className={styles.toggleThumb} />
+      </div>
+      <span className={`${styles.viewerToggleLabel}${isV2 ? ' ' + styles.active : ''}`}>V2</span>
+    </div>
+  )
+}
 
 export default function Viewer() {
   const { id }    = useParams()
   const [tab, setTab] = useState('scoreboard')
+  const [isV2, setIsV2] = useState(() => localStorage.getItem('cs2-viewer-v2') !== 'false')
+
+  function toggleVersion() {
+    setIsV2(prev => {
+      const next = !prev
+      localStorage.setItem('cs2-viewer-v2', String(next))
+      return next
+    })
+  }
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['demo', id],
@@ -33,32 +53,40 @@ export default function Viewer() {
 
   if (isLoading) return (
     <>
-      <SiteHeader><Link to="/" className="btn btn-ghost" style={{ marginLeft: 'auto' }}>← Load another demo</Link></SiteHeader>
+      <SiteHeader>
+        <ViewerToggle isV2={isV2} onToggle={toggleVersion} />
+        <Link to="/" className="btn btn-ghost" style={{ marginLeft: 'auto' }}>← Load another demo</Link>
+      </SiteHeader>
       <div className={styles.results}><p className="muted">Loading demo…</p></div>
     </>
   )
 
   if (isError) return (
     <>
-      <SiteHeader><Link to="/" className="btn btn-ghost" style={{ marginLeft: 'auto' }}>← Load another demo</Link></SiteHeader>
+      <SiteHeader>
+        <ViewerToggle isV2={isV2} onToggle={toggleVersion} />
+        <Link to="/" className="btn btn-ghost" style={{ marginLeft: 'auto' }}>← Load another demo</Link>
+      </SiteHeader>
       <div className={styles.results}><p style={{ color: 'var(--red)' }}>Failed to load demo: {error?.message}</p></div>
     </>
   )
 
-  const d = data
+  // Ensure data structure is valid
+  const d = data || {}
   const h = d.header || {}
 
   return (
     <>
       <SiteHeader>
+        <ViewerToggle isV2={isV2} onToggle={toggleVersion} />
         <Link to="/" className="btn btn-ghost" style={{ marginLeft: 'auto' }}>
           ← Load another demo
         </Link>
       </SiteHeader>
 
-      <div className={styles.results}>
+      <div className={`${styles.results}${tab === 'map' ? ' ' + styles.resultsFullscreen : ''}`}>
         {/* Match header */}
-        <div className={styles.matchHeader}>
+        {tab !== 'map' && <div className={styles.matchHeader}>
           <div className={styles.matchScore}>
             <div className={styles.teamBlock}>
               <div className={`${styles.teamName} ${styles.ctColor}`}>{d.ct_team}</div>
@@ -83,7 +111,7 @@ export default function Viewer() {
               </div>
             ))}
           </div>
-        </div>
+        </div>}
 
         {/* Tab bar */}
         <div className={styles.tabs}>
@@ -101,10 +129,12 @@ export default function Viewer() {
         {/* Tab panels */}
         {tab === 'scoreboard' && <Scoreboard scoreboard={d.scoreboard || []} />}
         {tab === 'timeline'   && <Timeline   rounds={d.rounds || []} kills={d.kills || []} ctTeam={d.ct_team} tTeam={d.t_team} />}
-        {tab === 'map'        && <MapView demo={d} demoId={id} />}
-        {tab === 'rounds'     && <Rounds     rounds={d.rounds || []} />}
-        {tab === 'killfeed'   && <KillFeed   kills={d.kills || []} />}
+        {tab === 'map'        && (isV2
+          ? <MapViewV2 demo={d} demoId={id} />
+          : <MapView   demo={d} demoId={id} />
+        )}
         {tab === 'aim'        && <AimBreakdown  aimBreakdown={d.aim_breakdown || []} />}
+        {tab === 'loadout'    && <LoadoutPanel  demoId={id} />}
       </div>
     </>
   )
