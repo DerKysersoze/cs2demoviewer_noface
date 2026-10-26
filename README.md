@@ -60,7 +60,7 @@ A dedicated page (`/aim/<demoId>`) to deep-dive into any player's shooting perfo
 
 ### Loadout
 
-[<img src="screenshots/loadout-dark.png" alt="Loadout" width="440" />](screenshots/loadout-dark.png)
+[<img src="screenshots/loadoutnextgen.png" alt="Loadout" width="440" />](screenshots/loadoutnextgen.png)
 
 Browse every player's cosmetics as equipped during the match — **both sides, side by side**:
 
