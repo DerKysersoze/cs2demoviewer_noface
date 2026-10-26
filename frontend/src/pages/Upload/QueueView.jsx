@@ -1,7 +1,7 @@
 import styles from './Upload.module.css'
 
-const ICON  = { queued: '⏳', uploading: '🔄', done: '✅', error: '❌' }
-const STATE = { queued: '', uploading: styles.qiUploading, done: styles.qiDone, error: styles.qiError }
+const ICON  = { queued: '⏳', uploading: '🔄', parsing: '⚙️', done: '✅', error: '❌' }
+const STATE = { queued: '', uploading: styles.qiUploading, parsing: styles.qiUploading, done: styles.qiDone, error: styles.qiError }
 
 export default function QueueView({ items, summary, onUploadMore }) {
   const processed = items.filter(it => it.state === 'done' || it.state === 'error').length
@@ -33,7 +33,8 @@ export default function QueueView({ items, summary, onUploadMore }) {
             </div>
             <span className={styles.qiStatus}>
               {item.state === 'queued'    && 'Queued'}
-              {item.state === 'uploading' && (item.progress > 0 ? `Uploading ${item.progress}%` : 'Parsing…')}
+              {item.state === 'uploading' && (item.progress > 0 ? `Uploading ${item.progress}%` : 'Uploading…')}
+              {item.state === 'parsing'   && 'Parsing…'}
               {item.state === 'done'      && 'Done'}
               {item.state === 'error'     && (item.error || 'Error')}
             </span>

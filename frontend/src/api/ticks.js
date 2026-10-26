@@ -11,7 +11,10 @@ export const ticksApi = {
       return res.json()
     }),
 
-  mapImageUrl: (mapName) => `/api/map_image/${encodeURIComponent(mapName)}`,
+  mapImageUrl: (mapName, floor) => {
+    const base = `/api/map_image/${encodeURIComponent(mapName)}`
+    return floor && floor !== 'default' ? `${base}/${encodeURIComponent(floor)}` : base
+  },
 
   mapsReady: () =>
     fetch('/api/maps_ready').then(res => res.json()),

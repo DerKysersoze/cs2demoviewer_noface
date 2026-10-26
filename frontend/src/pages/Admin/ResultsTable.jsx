@@ -1,11 +1,5 @@
 import styles from './Admin.module.css'
 
-function esc(s) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
-
 export default function ResultsTable({ result }) {
   if (!result) {
     return <div className={styles.resultsEmpty}>Run a query to see results.</div>

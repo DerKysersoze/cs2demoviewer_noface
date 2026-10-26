@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
@@ -6,6 +6,7 @@ import SiteHeader from '../../components/SiteHeader'
 import DropZone   from './DropZone'
 import QueueView  from './QueueView'
 import DemoHistory from './DemoHistory'
+import { demosApi } from '../../api/demos'
 import { useUploadQueue } from '../../hooks/useUploadQueue'
 import styles from './Upload.module.css'
 
@@ -36,42 +37,34 @@ export default function Upload() {
     }
   }
 
-  function uploadSingle(file) {
+  async function uploadSingle(file) {
     setView(VIEW.SINGLE)
-    setSingleLabel(`Parsing ${file.name} — this may take a moment…`)
+    setSingleLabel(`Uploading ${file.name}…`)
     setSinglePct(0)
 
-    const fd  = new FormData()
+    const fd = new FormData()
     fd.append('demo', file)
-    const xhr = new XMLHttpRequest()
-    xhr.open('POST', '/api/parse')
-
-    xhr.upload.addEventListener('progress', e => {
-      if (e.lengthComputable) {
-        const pct = Math.round(e.loaded / e.total * 100)
-        setSinglePct(pct)
-        setSingleLabel(`Uploading… ${pct}%`)
-      }
-    })
-
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        setSingleLabel('Parsing complete — loading viewer…')
-        const data = JSON.parse(xhr.responseText)
-        // Navigate by demo ID — no sessionStorage needed
-        navigate(`/viewer/${data.session_id}`)
-      } else {
-        let msg = 'Server error'
-        try { msg = JSON.parse(xhr.responseText).error || msg } catch {}
-        setView(VIEW.IDLE)
-        setError(msg)
-      }
-    }
-    xhr.onerror = () => {
+    try {
+      // Resolves once the server's background parse job finishes.
+      const data = await demosApi.parse(fd, {
+        onProgress: (pct) => {
+          setSinglePct(pct)
+          setSingleLabel(`Uploading… ${pct}%`)
+        },
+        onPhase: (phase) => {
+          if (phase === 'parsing') {
+            setSinglePct(100)
+            setSingleLabel('Parsing demo on the server — this can take ~1 minute…')
+          }
+        },
+      })
+      setSingleLabel('Parsing complete — loading results…')
+      // Navigate by demo ID — no sessionStorage needed
+      navigate(`/results/${data.session_id}`)
+    } catch (e) {
       setView(VIEW.IDLE)
-      setError('Network error — is the server running?')
+      setError(e.message || 'Upload failed')
     }
-    xhr.send(fd)
   }
 
   function resetToIdle() {

@@ -7,17 +7,23 @@ import argparse
 import datetime
 import json
 import logging
+import math
 import os
+import re
+import shutil
 import sqlite3
-import time
-import zlib
 import tempfile
+import threading
+import time
 import traceback
 import uuid
+import zlib
+
+import numpy as np
 from collections import OrderedDict
 from pathlib import Path
 
-from flask import Flask, g, jsonify, render_template, request, send_file, send_from_directory
+from flask import Flask, g, jsonify, request, send_file, send_from_directory
 
 # ── Logging setup ──────────────────────────────────────────────────────────────
 # Enabled only when launched with --verbose.
@@ -203,6 +209,8 @@ CREATE TABLE IF NOT EXISTS demo_rounds (
     reason      TEXT,
     ct_score    INTEGER,
     t_score     INTEGER,
+    start_tick  INTEGER,
+    end_tick    INTEGER,
     FOREIGN KEY (demo_id) REFERENCES demos(id)
 );
 CREATE INDEX IF NOT EXISTS idx_demo_rounds_demo_id ON demo_rounds(demo_id);
@@ -287,6 +295,7 @@ CREATE TABLE IF NOT EXISTS demo_data_blobs (
     ticks_data    BLOB,
     grenades_data BLOB,
     events_data   BLOB,
+    shots_data    BLOB,
     FOREIGN KEY (demo_id) REFERENCES demos(id)
 );
 """
@@ -316,6 +325,25 @@ def _db_init():
     if "weapon_cat" in dc_cols:
         con.execute("ALTER TABLE demo_cosmetics DROP COLUMN weapon_cat")
         log.info("DB: dropped demo_cosmetics.weapon_cat")
+
+    # ---- Phase 4: add demo_data_blobs.shots_data ----
+    # Pre-existing DBs keep their old table shape — CREATE TABLE IF NOT EXISTS
+    # won't add the column, so migrate explicitly (idempotent).
+    ddb_cols = {r[1] for r in con.execute("PRAGMA table_info(demo_data_blobs)").fetchall()}
+    if "shots_data" not in ddb_cols:
+        con.execute("ALTER TABLE demo_data_blobs ADD COLUMN shots_data BLOB")
+        log.info("DB: added demo_data_blobs.shots_data column")
+
+    # ---- Phase 5: add demo_rounds.start_tick / end_tick ----
+    # Same pattern: existing rows keep NULL until reparsed; the reparse
+    # endpoint backfills them from the .dem's round_start/round_end events.
+    dr_cols = {r[1] for r in con.execute("PRAGMA table_info(demo_rounds)").fetchall()}
+    if "start_tick" not in dr_cols:
+        con.execute("ALTER TABLE demo_rounds ADD COLUMN start_tick INTEGER")
+        log.info("DB: added demo_rounds.start_tick column")
+    if "end_tick" not in dr_cols:
+        con.execute("ALTER TABLE demo_rounds ADD COLUMN end_tick INTEGER")
+        log.info("DB: added demo_rounds.end_tick column")
 
     # ---- Migrate old swag_breakdown BLOB → demo_cosmetics rows ----
     cols = {r[1] for r in con.execute("PRAGMA table_info(demos)").fetchall()}
@@ -351,10 +379,11 @@ def _db_init():
                 if r_blob:
                     rounds = _unblob(r_blob)
                     con.executemany(
-                        "INSERT INTO demo_rounds (demo_id,round_num,winner_side,reason,ct_score,t_score)"
-                        " VALUES (?,?,?,?,?,?)",
+                        "INSERT INTO demo_rounds (demo_id,round_num,winner_side,reason,ct_score,t_score,start_tick,end_tick)"
+                        " VALUES (?,?,?,?,?,?,?,?)",
                         [(demo_id, r["round_num"], r["winner_side"], r.get("reason"),
-                          r.get("ct_score"), r.get("t_score")) for r in rounds],
+                          r.get("ct_score"), r.get("t_score"),
+                          r.get("start_tick"), r.get("end_tick")) for r in rounds],
                     )
                 if k_blob:
                     kills = _unblob(k_blob)
@@ -459,7 +488,7 @@ def _db_init():
 
 def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
              ticks_by_round: dict = None, grenades_by_round: dict = None,
-             events_by_round: dict = None):
+             events_by_round: dict = None, shots_by_round: dict = None):
     h = data_dict.get("header") or {}
     has_ticks = bool(ticks_by_round)
     log.info("db_save: starting — demo_id=%s filename=%s map=%s", demo_id, filename, map_name)
@@ -473,7 +502,7 @@ def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             demo_id, filename, map_name,
-            datetime.datetime.now(datetime.UTC),
+            datetime.datetime.now(datetime.UTC).isoformat(),  # explicit string — avoids the deprecated sqlite datetime adapter
             h.get("tickrate"), h.get("duration"),
             data_dict.get("ct_team"), data_dict.get("t_team"),
             data_dict.get("ct_wins"), data_dict.get("t_wins"),
@@ -486,10 +515,11 @@ def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
     rounds = data_dict.get("rounds") or []
     if rounds:
         con.executemany(
-            "INSERT INTO demo_rounds (demo_id,round_num,winner_side,reason,ct_score,t_score)"
-            " VALUES (?,?,?,?,?,?)",
+            "INSERT INTO demo_rounds (demo_id,round_num,winner_side,reason,ct_score,t_score,start_tick,end_tick)"
+            " VALUES (?,?,?,?,?,?,?,?)",
             [(demo_id, r["round_num"], r["winner_side"], r.get("reason"),
-              r.get("ct_score"), r.get("t_score")) for r in rounds],
+              r.get("ct_score"), r.get("t_score"),
+              r.get("start_tick"), r.get("end_tick")) for r in rounds],
         )
 
     # ---- demo_kills ----
@@ -556,15 +586,17 @@ def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
 
     # ---- demo_data_blobs ----
     con.execute("DELETE FROM demo_data_blobs WHERE demo_id = ?", (demo_id,))
-    if ticks_by_round or grenades_by_round or events_by_round:
+    if ticks_by_round or grenades_by_round or events_by_round or shots_by_round:
         con.execute(
-            "INSERT INTO demo_data_blobs (demo_id, ticks_data, grenades_data, events_data)"
-            " VALUES (?,?,?,?)",
+            "INSERT INTO demo_data_blobs"
+            " (demo_id, ticks_data, grenades_data, events_data, shots_data)"
+            " VALUES (?,?,?,?,?)",
             (
                 demo_id,
                 _blob(ticks_by_round)    if ticks_by_round    else None,
                 _blob(grenades_by_round) if grenades_by_round else None,
                 _blob(events_by_round)   if events_by_round   else None,
+                _blob(shots_by_round)    if shots_by_round    else None,
             ),
         )
 
@@ -581,13 +613,71 @@ def _db_save(demo_id: str, filename: str, map_name: str, data_dict: dict,
 
 
 def _db_list() -> list:
+    """Demo library feed. Beyond the basic identity, each demo carries the
+    final score (CT/T wins), teams, round count, duration and the match's top
+    performer (highest kills, K/D tiebreak) so the front-page cards can show
+    quick stats without a second request per demo."""
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     rows = con.execute(
-        "SELECT id, filename, map, uploaded_at FROM demos ORDER BY uploaded_at DESC"
+        """
+        SELECT d.id, d.filename, d.map, d.uploaded_at,
+               d.ct_team, d.t_team, d.ct_wins, d.t_wins, d.total_rounds, d.duration,
+               s.player_name AS mvp_name, s.team AS mvp_team,
+               s.kills AS mvp_kills, s.kd AS mvp_kd
+        FROM demos d
+        LEFT JOIN (
+            SELECT demo_id, player_name, team, kills, kd,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY demo_id
+                       ORDER BY kills DESC, kd DESC, player_name
+                   ) AS rn
+            FROM demo_scoreboard
+            WHERE kills IS NOT NULL
+        ) s ON s.demo_id = d.id AND s.rn = 1
+        ORDER BY d.uploaded_at DESC
+        """
     ).fetchall()
     con.close()
     return [dict(r) for r in rows]
+
+
+def _db_load_session(demo_id: str):
+    """Hydrate the in-memory ticks/grenades/events session for a demo from the DB.
+
+    Called after a server restart (or whenever the in-memory cache is cold) so
+    the 2D replay works for previously-parsed demos.  Returns the session dict,
+    or None if the demo has no stored tick data.
+    """
+    if demo_id in _session_cache:
+        _session_cache.move_to_end(demo_id)  # LRU: a hit refreshes recency
+        return _session_cache[demo_id]
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    row = con.execute(
+        "SELECT d.ticks_data, d.grenades_data, d.events_data, d.shots_data, m.map "
+        "FROM demo_data_blobs d JOIN demos m ON m.id = d.demo_id "
+        "WHERE d.demo_id = ?", (demo_id,)
+    ).fetchone()
+    con.close()
+    if not row or not row["ticks_data"]:
+        return None
+    if len(_session_cache) >= MAX_SESSIONS:
+        _session_cache.popitem(last=False)
+    _stored = DEMOS_DIR / f"{demo_id}.dem"
+    session = {
+        "ticks":    {int(k): v for k, v in _unblob(row["ticks_data"]).items()},
+        "grenades": {int(k): v for k, v in _unblob(row["grenades_data"]).items()} if row["grenades_data"] else {},
+        "events":   {int(k): v for k, v in _unblob(row["events_data"]).items()}   if row["events_data"]   else {},
+        "map_name": row["map"],
+        "dem_path": str(_stored) if _stored.exists() else None,
+    }
+    if row["shots_data"]:
+        session["shots"] = {int(k): v for k, v in _unblob(row["shots_data"]).items()}
+    # No shots blob (row saved before Phase 4)? Leave "shots" unset so
+    # api_ticks' lazy extract_shots fallback can rebuild it from the .dem.
+    _session_cache[demo_id] = session
+    return session
 
 
 def _db_get(demo_id: str):
@@ -700,20 +790,8 @@ def _db_get(demo_id: str):
     }
 
     if blob_row and blob_row["ticks_data"]:
-        ticks_by_round    = {int(k): v for k, v in _unblob(blob_row["ticks_data"]).items()}
-        grenades_by_round = {int(k): v for k, v in _unblob(blob_row["grenades_data"]).items()} if blob_row["grenades_data"] else {}
-        events_by_round   = {int(k): v for k, v in _unblob(blob_row["events_data"]).items()}   if blob_row["events_data"]   else {}
-        if len(_session_cache) >= MAX_SESSIONS:
-            _session_cache.popitem(last=False)
-        _stored = DEMOS_DIR / f"{demo_id}.dem"
-        _session_cache[demo_id] = {
-            "ticks":    ticks_by_round,
-            "grenades": grenades_by_round,
-            "events":   events_by_round,
-            "map_name": row["map"],
-            "dem_path": str(_stored) if _stored.exists() else None,
-        }
-        data["has_ticks"] = True
+        if _db_load_session(demo_id) is not None:
+            data["has_ticks"] = True
 
     return data
 
@@ -777,10 +855,155 @@ def _safe(val, default="?"):
         return default
 
 
-def _get_map_bounds(map_name: str) -> dict:
-    """Return pos_x, pos_y, scale for the map. Tries awpy first, falls back to hardcoded."""
+def _parse_overview_txt(path) -> dict | None:
+    """Parse an HLTV-style overview description file (maps/<map>.txt).
+
+    Returns {"pos_x", "pos_y", "scale", "sections": {name: {"alt_min", "alt_max"}}}.
+    The file format is nested quoted key/value blocks, optionally with
+    ``//`` comments.  ``verticalsections`` gives the altitude range of each
+    floor; the primary floor is the section named ``default``.
+    """
     try:
-        from awpy.data.map_data import MAP_DATA
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return None
+
+    # Strip // comments outside of quoted strings.
+    out: list[str] = []
+    in_str = False
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if in_str:
+            out.append(ch)
+            if ch == '"' and (i == 0 or text[i - 1] != "\\"):
+                in_str = False
+            i += 1
+            continue
+        if ch == '"':
+            in_str = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "/" and i + 1 < n and text[i + 1] == "/":
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        out.append(ch)
+        i += 1
+    text = "".join(out)
+
+    # Tokenize quoted strings and braces.
+    tokens = []
+    for m in re.finditer(r'"((?:[^"\\]|\\.)*)"|\{|\}', text):
+        tokens.append(m.group(1) if m.group(1) is not None else m.group(0))
+
+    # Walk tokens into a nested dict (key → value | key → block).
+    root: dict = {}
+    stack: list[dict] = [root]
+    key = None
+    for tok in tokens:
+        if tok == "{":
+            child: dict = {}
+            if key is not None:
+                stack[-1][key] = child
+                key = None
+            stack.append(child)
+        elif tok == "}":
+            if len(stack) > 1:
+                stack.pop()
+            if key is not None and stack:
+                stack[-1][key] = ""
+                key = None
+        else:
+            if key is None:
+                key = tok
+            else:
+                stack[-1][key] = tok
+                key = None
+
+    # The map name is the first key and wraps all the data ("de_nuke" { ... }).
+    if len(root) == 1:
+        only = next(iter(root.values()))
+        if isinstance(only, dict):
+            root = only
+
+    def _f(k):
+        try:
+            return float(root.get(k, ""))
+        except (TypeError, ValueError):
+            return None
+
+    pos_x, pos_y, scale = _f("pos_x"), _f("pos_y"), _f("scale")
+    if pos_x is None or pos_y is None or scale is None:
+        return None
+
+    sections: dict = {}
+    vs = root.get("verticalsections")
+    if isinstance(vs, dict):
+        for sname, sbody in vs.items():
+            if not isinstance(sbody, dict):
+                continue
+            try:
+                sections[sname] = {
+                    "alt_min": float(sbody.get("AltitudeMin", -16384)),
+                    "alt_max": float(sbody.get("AltitudeMax", 16384)),
+                }
+            except (TypeError, ValueError):
+                continue
+    if not sections:
+        sections = {"default": {"alt_min": -16384, "alt_max": 16384}}
+
+    return {"pos_x": pos_x, "pos_y": pos_y, "scale": scale, "sections": sections}
+
+
+def _map_floors(map_name: str) -> list[dict]:
+    """Floors for a map = overview sections that have an image in maps/.
+
+    Section ``default`` → maps/<map>.png, section ``x`` → maps/<map>_x.png.
+    Sorted by altitude (lowest floor first).  One anonymous floor is returned
+    when the map has no local data (image then comes from the awpy fallback).
+    """
+    maps_dir = Path(__file__).parent / "maps"
+    txt = maps_dir / f"{map_name}.txt"
+    parsed = _parse_overview_txt(txt) if txt.exists() else None
+    sections = parsed["sections"] if parsed else {"default": {"alt_min": -16384, "alt_max": 16384}}
+
+    floors = []
+    for sname, rng in sections.items():
+        fname = map_name if sname == "default" else f"{map_name}_{sname}"
+        if not (maps_dir / f"{fname}.png").exists():
+            continue
+        floors.append({
+            "name":    sname,
+            "label":   "Main" if sname == "default" else sname.title(),
+            "image":   f"/api/map_image/{map_name}" + ("" if sname == "default" else f"/{sname}"),
+            "alt_min": rng["alt_min"],
+            "alt_max": rng["alt_max"],
+        })
+    if not floors:
+        floors = [{
+            "name": "default", "label": "Main",
+            "image": f"/api/map_image/{map_name}",
+            "alt_min": -16384, "alt_max": 16384,
+        }]
+    floors.sort(key=lambda f: f["alt_min"])
+    return floors
+
+
+def _get_map_bounds(map_name: str) -> dict:
+    """Return pos_x, pos_y, scale for the map.
+
+    Order: maps/<map>.txt (single source of truth) → awpy MAP_DATA →
+    hardcoded bounds → dust2 default.
+    """
+    txt = Path(__file__).parent / "maps" / f"{map_name}.txt"
+    if txt.exists():
+        parsed = _parse_overview_txt(txt)
+        if parsed:
+            return {"pos_x": parsed["pos_x"], "pos_y": parsed["pos_y"], "scale": parsed["scale"]}
+    try:
+        from awpy.data.map_data import MAP_DATA  # noqa: F401
         if map_name in MAP_DATA:
             d = MAP_DATA[map_name]
             return {"pos_x": d["pos_x"], "pos_y": d["pos_y"], "scale": d["scale"]}
@@ -1318,8 +1541,12 @@ def extract_events(dem_path, ticks_by_round: dict) -> dict:
 
 def extract_ticks(demo, dem_path=None) -> dict:
     """
-    Returns {round_num: [{"t": tick, "p": [{"n": name, "x": x, "y": y, "hp": hp, "alive": bool, "side": side}]}]}
+    Returns {round_num: [{"t": tick, "p": [{"n": name, "x": x, "y": y, "z": z,
+                                            "hp": hp, "alive": bool, "side": side,
+                                            "armor": int, "helmet": bool,
+                                            "w": weapon name or null}]}]}
     Downsampled by TICK_SAMPLE for reasonable data size.
+
     """
     ticks_df = _to_pd(getattr(demo, "ticks", None))
     if ticks_df is None:
@@ -1328,8 +1555,9 @@ def extract_ticks(demo, dem_path=None) -> dict:
     cols = list(ticks_df.columns)
     log.info("extract_ticks columns: %s", cols)
 
-    # Augment with armor/helmet via a second demoparser2 pass
-    if dem_path:
+    # Augment with armor/helmet via a second demoparser2 pass (the wrapper
+    # already includes these when supported — skip the extra pass then).
+    if dem_path and not ({"armor_value", "has_helmet"} <= set(cols)):
         try:
             from demoparser2 import DemoParser
             armor_df = DemoParser(dem_path).parse_ticks(["armor_value", "has_helmet"])
@@ -1346,11 +1574,13 @@ def extract_ticks(demo, dem_path=None) -> dict:
     name_col   = next((c for c in ["name", "player_name", "steamid"] if c in cols), None)
     x_col      = next((c for c in ["X", "x", "pos_x"] if c in cols), None)
     y_col      = next((c for c in ["Y", "y", "pos_y"] if c in cols), None)
+    z_col      = next((c for c in ["Z", "z", "pos_z"] if c in cols), None)  # altitude — floor selection
     hp_col     = next((c for c in ["health", "hp", "Health"] if c in cols), None)
     alive_col  = next((c for c in ["is_alive", "alive", "isAlive"] if c in cols), None)
     side_col   = next((c for c in ["side", "team_side", "Side"] if c in cols), None)
     armor_col  = next((c for c in ["armor", "armor_value", "kevlar"] if c in cols), None)
     helmet_col = next((c for c in ["has_helmet", "helmet"] if c in cols), None)
+    weapon_col = next((c for c in ["weapon_name", "weaponName"] if c in cols), None)  # per-tick weapon (optional)
 
     if not (name_col and x_col and y_col and "tick" in cols and "round_num" in cols):
         log.warning("missing required tick columns — map tracker disabled")
@@ -1361,52 +1591,104 @@ def extract_ticks(demo, dem_path=None) -> dict:
 
     ROUND_START_SKIP = 160  # freeze-time / buy-phase ticks to skip each round
 
+    def _fnum(series):
+        """Numeric float64 array (non-numeric → NaN), for vectorised conversion."""
+        return pd.to_numeric(series, errors="coerce").to_numpy(dtype="float64")
+
+    def _flag(series, default):
+        """Bool array; NaN → default (mirrors the old per-row try/except)."""
+        arr = series.to_numpy()
+        if arr.dtype == bool:
+            return arr
+        v = _fnum(series)
+        return np.where(np.isnan(v), default, v.astype(bool))
+
+    def _wstr(v):
+        """Weapon name or None (NaN / empty → None; NaN in buy/respawn windows)."""
+        if v is None:
+            return None
+        try:
+            if pd.isna(v):
+                return None
+        except (TypeError, ValueError):
+            pass
+        s = str(v).strip()
+        return s if s.lower() not in ("nan", "none", "", "<na>") else None
+
+    # Vectorised rewrite of the old iterrows loop (Phase 4): identical output
+    # semantics — NaN → same defaults, int() truncation, stable row order
+    # within each tick, frames in ascending tick order — but no per-row Series
+    # construction. Guarded by tests/test_ticks_equivalence.py against the
+    # stored golden blob.
     result = {}
     for round_num, rdf in ticks_df.groupby("round_num"):
-        all_ticks = np.sort(rdf["tick"].unique())
+        tick_all  = rdf["tick"].to_numpy()
+        all_ticks = np.unique(tick_all)  # == np.sort(rdf["tick"].unique())
         if len(all_ticks) > ROUND_START_SKIP:
             all_ticks = all_ticks[ROUND_START_SKIP:]
-        sampled   = set(all_ticks[::TICK_SAMPLE])
-        sdf       = rdf[rdf["tick"].isin(sampled)].copy()
+        sampled = all_ticks[::TICK_SAMPLE]
+        mask    = np.isin(tick_all, sampled)
+        if not mask.any():
+            result[int(round_num)] = []
+            continue
 
+        # Selected rows, sorted by tick with *stable* order inside each tick —
+        # exactly the order the old groupby("tick") + row iteration produced.
+        idx   = np.nonzero(mask)[0]
+        order = idx[np.argsort(tick_all[idx], kind="stable")]
+
+        n      = rdf[name_col].to_numpy()[order]
+        xs     = _fnum(rdf[x_col])[order]
+        ys     = _fnum(rdf[y_col])[order]
+        zs     = _fnum(rdf[z_col])[order] if z_col else None
+        hpv    = _fnum(rdf[hp_col])[order] if hp_col else None
+        if hpv is not None:
+            hpv = np.where(np.isnan(hpv), 100, hpv)
+            hp = np.trunc(hpv).astype("int64")
+        else:
+            hp = np.full(len(order), 100, dtype="int64")
+        alive  = (_flag(rdf[alive_col], hp > 0)[order] if alive_col
+                  else (hp > 0))
+        px     = np.where(np.isnan(xs), 0.0, xs)
+        py     = np.where(np.isnan(ys), 0.0, ys)
+        armv   = _fnum(rdf[armor_col])[order] if armor_col else None
+        if armv is not None:
+            armv = np.where(np.isnan(armv), 0, armv)
+            armor = np.trunc(armv).astype("int64")
+        else:
+            armor = np.zeros(len(order), dtype="int64")
+        helmet = (_flag(rdf[helmet_col], False)[order] if helmet_col
+                  else np.zeros(len(order), dtype=bool))
+        side   = (rdf[side_col].where(rdf[side_col].notna(), "?").astype(str).to_numpy()[order]
+                  if side_col else np.full(len(order), "?"))
+        wname  = (rdf[weapon_col].to_numpy()[order] if weapon_col else None)
+
+        # Single linear pass: start a new frame whenever the tick changes.
         frames = []
-        for tick_val, tdf in sdf.groupby("tick"):
-            players = []
-            for _, row in tdf.iterrows():
-                try:
-                    hp = int(row[hp_col]) if hp_col and not pd.isna(row[hp_col]) else 100
-                except Exception:
-                    hp = 100
-                try:
-                    alive = bool(row[alive_col]) if alive_col and not pd.isna(row[alive_col]) else hp > 0
-                except Exception:
-                    alive = hp > 0
-                try:
-                    px = float(row[x_col]) if not pd.isna(row[x_col]) else 0.0
-                    py = float(row[y_col]) if not pd.isna(row[y_col]) else 0.0
-                except Exception:
-                    px = py = 0.0
-                try:
-                    armor = int(row[armor_col]) if armor_col and not pd.isna(row[armor_col]) else 0
-                except Exception:
-                    armor = 0
-                try:
-                    helmet = bool(row[helmet_col]) if helmet_col and not pd.isna(row[helmet_col]) else False
-                except Exception:
-                    helmet = False
-                players.append({
-                    "n":      str(row[name_col]),
-                    "x":      px,
-                    "y":      py,
-                    "hp":     hp,
-                    "alive":  alive,
-                    "side":   str(row[side_col]) if side_col and not pd.isna(row.get(side_col, None)) else "?",
-                    "armor":  armor,
-                    "helmet": helmet,
-                })
-            frames.append({"t": int(tick_val), "p": players})
+        cur_tick = None
+        players  = None
+        for i in range(len(order)):
+            t = int(tick_all[order[i]])
+            if t != cur_tick:
+                if players is not None:
+                    frames.append({"t": cur_tick, "p": players})
+                cur_tick, players = t, []
+            players.append({
+                "n":      str(n[i]),
+                "x":      float(px[i]),
+                "y":      float(py[i]),
+                "z":      (None if (zs is None or math.isnan(zs[i])) else float(zs[i])),
+                "hp":     int(hp[i]),
+                "alive":  bool(alive[i]),
+                "side":   str(side[i]),
+                "armor":  int(armor[i]),
+                "helmet": bool(helmet[i]),
+                "w":      (_wstr(wname[i]) if wname is not None else None),
+            })
+        if players is not None:
+            frames.append({"t": cur_tick, "p": players})
 
-        result[int(round_num)] = sorted(frames, key=lambda f: f["t"])
+        result[int(round_num)] = frames  # already in ascending tick order
 
     return result
 
@@ -1607,8 +1889,219 @@ def _load_base_weapon_ids() -> None:
         log.warning("base weapons: failed to load from base_weapons.json: %s", e)
 
 
+# defindex values that appear in the buy stream but are gear, not loadout
+# weapons (grenades, armor, defuse kit, C4) — never stored in demo_cosmetics.
+# 43-49 grenade/C4 defindices per struct_db/base_weapons.json.
+_NON_LOADOUT_DEFIDX = frozenset({43, 44, 45, 46, 47, 48, 49, 50, 51, 55})
+
+# Full buytime is 15 s; +1 s of slack so late purchases still land in-cluster.
+_BUY_WINDOW_SECS = 16
+
+
+def _make_cosmetic_item(def_idx: int, paint, st_count, skin_names: dict) -> dict:
+    """Build one demo_cosmetics item row, merging optional paint data."""
+    paint      = paint or {}
+    paint_idx  = int(paint.get("paint_index") or 0)
+    paint_seed = paint.get("paint_seed")
+    wear_f     = paint.get("wear")
+    custom     = paint.get("custom_name")
+    is_agent   = def_idx >= 4600 and wear_f is None
+    if is_agent:
+        item_name = _AGENT_NAMES.get(def_idx, f"Agent #{def_idx}")
+        side      = _AGENT_SIDE.get(def_idx, "both")
+        skin_name = None
+    else:
+        item_name = _WEAPON_NAMES.get(def_idx, f"Item #{def_idx}")
+        side      = _WEAPON_SIDE.get(def_idx, "both")
+        skin_name = skin_names.get(str(paint_idx)) if paint_idx else None
+    return {
+        "def_index":   def_idx,
+        "item_name":   item_name,
+        "skin_name":   skin_name,
+        "paint_index": paint_idx,
+        "paint_seed":  paint_seed,
+        "wear":        wear_f,
+        "wear_tier":   _wear_tier(wear_f) if wear_f is not None else None,
+        "custom_name": custom,
+        "stattrak":    st_count,
+        "is_agent":    is_agent,
+        "side":        side,
+        "weapon_cat":  "knife" if def_idx in _KNIFE_DEF_INDICES else None,
+    }
+
+
+def _side_purchase_loadouts(parser, sid_info: dict):
+    """Per-player CT/T loadout def_index sets from the demo's buy stream.
+
+    Round boundaries come from ``cs_pre_restart``, the side timeline from
+    ``player_team`` (initial side inferred when a player buys before their
+    first logged switch), and ``item_pickup`` events inside the buy window
+    after each boundary are that round's actual purchases.
+
+    Returns ``{sid: {"CT": set(defidx), "T": set(defidx)}}`` or ``None``
+    when the purchase events are unavailable (caller uses the fallback).
+    """
+    import bisect
+    try:
+        bounds_df = parser.parse_event("cs_pre_restart")
+        team_df   = parser.parse_event("player_team", player=["steamid"])
+        pick_df   = parser.parse_event("item_pickup", player=["steamid"])
+    except Exception as e:
+        log.warning("extract_cosmetics: purchase events unavailable (%s)", e)
+        return None
+
+    try:
+        boundaries = sorted({int(t) for t in bounds_df["tick"]})
+    except Exception:
+        boundaries = []
+    if not boundaries:
+        return None
+
+    def _sid_col(df):
+        return "user_steamid" if "user_steamid" in df.columns else "steamid"
+
+    # side timeline: sid -> [(tick, side)] sorted by tick
+    switches: dict = {}
+    try:
+        sid_col = _sid_col(team_df)
+        for _, r in team_df.iterrows():
+            sid = str(r.get(sid_col, ""))
+            if not sid:
+                continue
+            switches.setdefault(sid, []).append(
+                (int(r["tick"]), "CT" if int(r["team"]) == 3 else "T"))
+    except Exception:
+        pass
+    for sid in switches:
+        switches[sid].sort()
+
+    def _initial_side(sid: str) -> str:
+        """Side before the player's first logged switch.
+
+        An odd number of switches means the demo ended on the opposite
+        side it started on, so flip the end-of-demo side.
+        """
+        final = sid_info.get(sid, {}).get("team") or "CT"
+        if len(switches.get(sid, [])) % 2 == 1:
+            final = "T" if final == "CT" else "CT"
+        return final
+
+    def _side_at(sid: str, tick: int, cluster_defs) -> str:
+        evs   = switches.get(sid, [])
+        prior = [s for (t, s) in evs if t <= tick]
+        if prior:
+            return prior[-1]
+        for di in cluster_defs:  # cross-check with side-specific items
+            s = _WEAPON_SIDE.get(di)
+            if s in ("CT", "T"):
+                return s
+        return _initial_side(sid)
+
+    try:
+        tickrate = int(parser.parse_header().get("tickrate", 128) or 128)
+    except Exception:
+        tickrate = 128
+    buy_window = tickrate * _BUY_WINDOW_SECS
+
+    try:
+        loadouts = {sid: {"CT": set(), "T": set()} for sid in sid_info}
+        sid_col  = _sid_col(pick_df)
+        pick_df  = pick_df[pick_df["defindex"].isin(list(_WEAPON_NAMES.keys()))
+                          & ~pick_df["defindex"].isin(_NON_LOADOUT_DEFIDX)]
+        for sid, sides in loadouts.items():
+            mine = pick_df[pick_df[sid_col].astype(str) == sid]
+            clusters = {}  # boundary index -> [(tick, defidx)]
+            for _, r in mine.iterrows():
+                tick = int(r["tick"])
+                bi = bisect.bisect_right(boundaries, tick) - 1
+                if bi < 0 or tick - boundaries[bi] > buy_window:
+                    continue  # mid-round pickup (dropped weapon), not a buy
+                clusters.setdefault(bi, []).append((tick, int(r["defindex"])))
+            for bi, entries in clusters.items():
+                side = _side_at(sid, min(t for t, _ in entries),
+                                [d for _, d in entries])
+                sides[side].update(d for _, d in entries)
+        return loadouts
+    except Exception as e:
+        log.warning("extract_cosmetics: purchase clustering failed (%s)", e)
+        return None
+
+
+def _extract_cosmetics_legacy(parser, skin_names, stattrak, sid_info, painted, agents) -> list:
+    """Fallback loadout path: parse_skins snapshot + weapon_fire fill-in.
+
+    Used only when the purchase events (item_pickup / player_team /
+    cs_pre_restart) are unavailable; preserves the previous behavior.
+    """
+    player_weapons_used: dict = {}  # steamid -> set of def_indices
+    try:
+        fire_df = parser.parse_event("weapon_fire", player=["steamid"])
+        sid_col = "user_steamid" if "user_steamid" in fire_df.columns else "steamid"
+        for _, row in fire_df.iterrows():
+            sid = str(row.get(sid_col, ""))
+            defidx = _WEAPON_CLASS_TO_DEFIDX.get(str(row.get("weapon", "")))
+            if defidx and sid:
+                player_weapons_used.setdefault(sid, set()).add(defidx)
+    except Exception:
+        pass
+
+    sid_items: dict = {}
+    for sid in agents:
+        sid_items[sid] = list(agents[sid])
+    for sid, paint_by_def in painted.items():
+        for di, p in paint_by_def.items():
+            sid_items.setdefault(sid, []).append(
+                _make_cosmetic_item(di, p, stattrak.get(sid, {}).get(di), skin_names))
+
+    for sid, used_defidxs in player_weapons_used.items():
+        existing = {i["def_index"] for i in sid_items.get(sid, []) if not i["is_agent"]}
+        for defidx in sorted(used_defidxs):
+            if defidx not in existing:
+                sid_items.setdefault(sid, []).append(
+                    _make_cosmetic_item(defidx, None, None, skin_names))
+
+    result = []
+    for sid, info in sid_info.items():
+        items = sid_items.get(sid, [])
+
+        def _weapons_for(side: str):
+            return sorted(
+                [i for i in items if not i["is_agent"] and i["side"] in (side, "both")],
+                key=lambda x: x["def_index"],
+            )
+
+        result.append({
+            "steamid":    sid,
+            "name":       info["name"],
+            "team":       info["team"],
+            "ct_agent":   next((i for i in items if i["is_agent"] and i["side"] in ("CT", "both")), None),
+            "t_agent":    next((i for i in items if i["is_agent"] and i["side"] in ("T",  "both")), None),
+            "ct_weapons": _weapons_for("CT"),
+            "t_weapons":  _weapons_for("T"),
+        })
+
+    result.sort(key=lambda p: (0 if p["team"] == "CT" else 1, p["name"]))
+    return result
+
+
 def extract_cosmetics(dem_path: str) -> list:
-    """Return per-player agent + weapon skin data using demoparser2 directly."""
+    """Return per-player CT-side and T-side loadout data for a demo.
+
+    Loadouts are rebuilt from the demo's purchase stream: ``item_pickup``
+    events inside the buy window after each ``cs_pre_restart`` boundary,
+    attributed to the player's side at that moment (``player_team`` switch
+    timeline; initial side inferred).  Paint / seed / wear / custom names
+    are joined in from ``parse_skins()`` by (steamid, def_index); painted
+    items missing from the purchase stream are kept and assigned by
+    weapon class (CT / T / both) so no data is lost versus the old
+    snapshot parser.  StatTrak comes from the ``parse_ticks`` pass.
+
+    Agents only exist in ``parse_skins()`` (demoparser2 exposes no agent
+    field, so at most one per player) and are tagged ``ct_agent`` /
+    ``t_agent`` via their class.  Falls back to the legacy
+    parse_skins + weapon_fire snapshot when the purchase events are
+    unavailable (older demos).
+    """
     import struct
     import pandas as pd
     try:
@@ -1639,20 +2132,7 @@ def extract_cosmetics(dem_path: str) -> list:
     except Exception:
         pass
 
-    # ---- Weapons fired per player (fallback for unskinned weapons) ----
-    player_weapons_used: dict = {}  # steamid -> set of def_indices
-    try:
-        fire_df = parser.parse_event("weapon_fire", player=["steamid"])
-        sid_col = "user_steamid" if "user_steamid" in fire_df.columns else "steamid"
-        for _, row in fire_df.iterrows():
-            sid = str(row.get(sid_col, ""))
-            defidx = _WEAPON_CLASS_TO_DEFIDX.get(str(row.get("weapon", "")))
-            if defidx and sid:
-                player_weapons_used.setdefault(sid, set()).add(defidx)
-    except Exception:
-        pass
-
-    # steamid -> {name, team}
+    # steamid -> {name, team (end-of-demo side, used for ordering only)}
     sid_info: dict = {}
     for _, row in info_df.iterrows():
         sid_info[str(row["steamid"])] = {
@@ -1660,15 +2140,16 @@ def extract_cosmetics(dem_path: str) -> list:
             "team": "CT" if int(row["team_number"]) == 3 else "T",
         }
 
-    # steamid -> items list
-    sid_items: dict = {}
+    # ---- parse_skins snapshot: paint info per (sid, def) + agents ----
+    painted: dict = {}  # sid -> {def_index -> paint dict}
+    agents:  dict = {}  # sid -> [item, ...]
     for _, row in skins_df.iterrows():
-        sid       = str(row["steamid"])
-        def_idx   = int(row["def_index"])
-        paint_idx = int(row["paint_index"]) if not pd.isna(row["paint_index"]) else 0
+        sid        = str(row["steamid"])
+        def_idx    = int(row["def_index"])
+        paint_idx  = int(row["paint_index"]) if not pd.isna(row["paint_index"]) else 0
         paint_seed = int(row["paint_seed"]) if not pd.isna(row.get("paint_seed", float("nan"))) else None
-        wear_raw  = row.get("paint_wear")
-        wear_f    = None
+        wear_raw   = row.get("paint_wear")
+        wear_f     = None
         if wear_raw is not None and not pd.isna(wear_raw):
             try:
                 wear_f = round(struct.unpack("f", struct.pack("I", int(wear_raw)))[0], 4)
@@ -1678,71 +2159,53 @@ def extract_cosmetics(dem_path: str) -> list:
         custom = str(custom) if custom is not None and not pd.isna(custom) else None
 
         # Agents have no wear and typically def_index >= 4600
-        is_agent = (def_idx >= 4600 and wear_f is None)
-
-        if is_agent:
-            item_name = _AGENT_NAMES.get(def_idx, f"Agent #{def_idx}")
-            item_side = _AGENT_SIDE.get(def_idx, "both")
-            skin_name = None
+        if def_idx >= 4600 and wear_f is None:
+            agents.setdefault(sid, []).append(
+                _make_cosmetic_item(def_idx, None, stattrak.get(sid, {}).get(def_idx), skin_names))
         else:
-            item_name = _WEAPON_NAMES.get(def_idx, f"Item #{def_idx}")
-            item_side = _WEAPON_SIDE.get(def_idx, "both")
-            skin_name = skin_names.get(str(paint_idx)) if paint_idx else None
+            painted.setdefault(sid, {})[def_idx] = {
+                "paint_index": paint_idx,
+                "paint_seed":  paint_seed,
+                "wear":        wear_f,
+                "custom_name": custom,
+            }
 
-        st_count = stattrak.get(sid, {}).get(def_idx)
-
-        sid_items.setdefault(sid, []).append({
-            "def_index":   def_idx,
-            "item_name":   item_name,
-            "skin_name":   skin_name,
-            "paint_index": paint_idx,
-            "paint_seed":  paint_seed,
-            "wear":        wear_f,
-            "wear_tier":   _wear_tier(wear_f) if wear_f is not None else None,
-            "custom_name": custom,
-            "stattrak":    st_count,
-            "is_agent":    is_agent,
-            "side":        item_side,
-            "weapon_cat":  "knife" if def_idx in _KNIFE_DEF_INDICES else None,
-        })
-
-    # Fill in default (no-skin) entries for weapons used in-game but absent from parse_skins
-    for sid, used_defidxs in player_weapons_used.items():
-        existing = {i["def_index"] for i in sid_items.get(sid, []) if not i["is_agent"]}
-        for defidx in sorted(used_defidxs):
-            if defidx not in existing:
-                sid_items.setdefault(sid, []).append({
-                    "def_index":   defidx,
-                    "item_name":   _WEAPON_NAMES.get(defidx, f"Item #{defidx}"),
-                    "skin_name":   None,
-                    "paint_index": 0,
-                    "paint_seed":  None,
-                    "wear":        None,
-                    "wear_tier":   None,
-                    "custom_name": None,
-                    "stattrak":    None,
-                    "is_agent":    False,
-                    "side":        _WEAPON_SIDE.get(defidx, "both"),
-                })
+    # ---- per-side purchase loadouts (authoritative) ----
+    loadouts = _side_purchase_loadouts(parser, sid_info)
+    if loadouts is None:
+        return _extract_cosmetics_legacy(parser, skin_names, stattrak, sid_info, painted, agents)
 
     result = []
     for sid, info in sid_info.items():
-        items = sid_items.get(sid, [])
+        paint_by_def = painted.get(sid, {})
+        ct_defs = set(loadouts[sid]["CT"])
+        t_defs  = set(loadouts[sid]["T"])
+        # Union safety: keep every painted item, assigned by weapon class
+        # ('both'-class such as knives/gloves/SGs go to both sides).
+        for di in paint_by_def:
+            cls = _WEAPON_SIDE.get(di, "both")
+            if cls in ("CT", "both"):
+                ct_defs.add(di)
+            if cls in ("T", "both"):
+                t_defs.add(di)
 
-        def _weapons_for(side: str):
-            return sorted(
-                [i for i in items if not i["is_agent"] and i["side"] in (side, "both")],
-                key=lambda x: x["def_index"],
-            )
+        all_defs = ct_defs | t_defs
+        items = []
+        for di in sorted(all_defs):
+            it = _make_cosmetic_item(di, paint_by_def.get(di),
+                                     stattrak.get(sid, {}).get(di), skin_names)
+            in_ct, in_t = di in ct_defs, di in t_defs
+            it["side"] = "both" if (in_ct and in_t) else ("CT" if in_ct else "T")
+            items.append(it)
 
         result.append({
             "steamid":    sid,
             "name":       info["name"],
             "team":       info["team"],
-            "ct_agent":   next((i for i in items if i["is_agent"] and i["side"] in ("CT", "both")), None),
-            "t_agent":    next((i for i in items if i["is_agent"] and i["side"] in ("T",  "both")), None),
-            "ct_weapons": _weapons_for("CT"),
-            "t_weapons":  _weapons_for("T"),
+            "ct_agent":   next((a for a in agents.get(sid, []) if a["side"] in ("CT", "both")), None),
+            "t_agent":    next((a for a in agents.get(sid, []) if a["side"] in ("T",  "both")), None),
+            "ct_weapons": sorted([i for i in items if i["side"] in ("CT", "both")], key=lambda x: x["def_index"]),
+            "t_weapons":  sorted([i for i in items if i["side"] in ("T", "both")],  key=lambda x: x["def_index"]),
         })
 
     result.sort(key=lambda p: (0 if p["team"] == "CT" else 1, p["name"]))
@@ -1786,7 +2249,7 @@ def _calc_kast(kills: list, rounds: list) -> dict:
 
     for rnum in round_nums:
         rk = kills_by_round.get(rnum, [])
-        killers   = {k["attacker"] for k in rk if k["attacker"] not in _nan}
+        killers   = {k["attacker"] for k in rk if k["attacker"] not in _nan and k["attacker"] != k["victim"]}
         assisters = {k["assister"] for k in rk if k.get("assister", "") not in _nan}
         victims   = {k["victim"]   for k in rk if k["victim"]   not in _nan}
         # map: killed player -> (their killer, tick they died)
@@ -1913,8 +2376,117 @@ def _duration(h: dict) -> str:
             return "?"
 
 
-def parse_demo(dem_path: str) -> dict:
-    from awpy import Demo
+# ── Parse jobs ─────────────────────────────────────────────────────────────────
+# Parsing a demo takes ~30–60 s of CPU work.  Uploads therefore return
+# immediately with a job id; the parse runs in a background thread and clients
+# poll /api/jobs/<job_id>.  Jobs live in memory (bounded, newest kept);
+# an in-flight job is lost if the server restarts, which is acceptable for
+# the dev server (the upload can simply be retried).
+_parse_jobs: "OrderedDict[str, dict]" = OrderedDict()
+_jobs_lock = threading.Lock()
+_MAX_JOBS = 32
+
+
+def _register_job(job_id: str, filename: str, tmp_path: str):
+    with _jobs_lock:
+        _parse_jobs[job_id] = {
+            "status":   "parsing",
+            "filename": filename,
+            "tmp_path": tmp_path,
+            "created":  time.time(),
+        }
+        while len(_parse_jobs) > _MAX_JOBS:
+            _parse_jobs.popitem(last=False)
+
+
+def _finish_job(job_id: str, status: str, **extra):
+    with _jobs_lock:
+        job = _parse_jobs.get(job_id)
+        if job is None:
+            return
+        job["status"] = status
+        job["finished"] = time.time()
+        job.update(extra)
+
+
+def _run_parse_job(job_id: str):
+    with _jobs_lock:
+        job = dict(_parse_jobs.get(job_id, {}))
+    tmp_path = job.get("tmp_path", "")
+    filename = job.get("filename", "")
+    try:
+        data = parse_demo(tmp_path)
+        # Guard: a file that isn't a real CS2 demo parses to an *empty* result
+        # (demoparser2 doesn't raise on foreign files). Refuse it explicitly so
+        # invalid uploads don't become phantom empty demos in the library.
+        if not (data.get("rounds") or data.get("kills")):
+            raise ValueError(
+                "no rounds or kills parsed — file does not look like a valid CS2 demo"
+            )
+        data["filename"] = filename
+        session_id = data["session_id"]
+        if session_id in _session_cache:
+            _session_cache.move_to_end(session_id)  # LRU: a read refreshes recency
+        cached = _session_cache.get(session_id, {})
+        ticks    = cached.get("ticks", {})
+        grenades = cached.get("grenades", {})
+        events   = cached.get("events", {})
+        shots    = cached.get("shots", {})
+        _db_save(session_id, filename, data["header"]["map"], data, ticks, grenades, events, shots)
+
+        # Persist the .dem so re-parse endpoints (tracers etc.) can reuse it
+        stored_path = DEMOS_DIR / f"{session_id}.dem"
+        shutil.copy2(tmp_path, stored_path)
+        if session_id in _session_cache:
+            _session_cache[session_id]["dem_path"] = str(stored_path)
+
+        log.info("parse job %s: completed %s — map=%s rounds=%s (%.2fs)",
+                 job_id, filename, data["header"].get("map"),
+                 data.get("total_rounds"), time.monotonic() - job.get("created", time.time()))
+        _finish_job(job_id, "done", data=data)
+    except Exception as e:
+        log.error("parse job %s: failed for %s — %s", job_id, filename, e, exc_info=True)
+        traceback.print_exc()
+        _finish_job(job_id, "error", error=str(e))
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
+def _tick_side_lookup(demo) -> dict:
+    """Build a per-player (steamid → (tick array, team array)) lookup from the
+    tick data so any kill can be attributed to a side using the player's actual
+    team at that moment (survives half-time side swaps)."""
+    ticks_df = _to_pd(getattr(demo, "ticks", None))
+    if ticks_df is None or not ({"steamid", "tick", "team_num"} <= set(ticks_df.columns)):
+        return {}
+    lookup = {}
+    for sid, grp in ticks_df.groupby("steamid"):
+        grp = grp.sort_values("tick")
+        try:
+            lookup[str(int(sid))] = (grp["tick"].to_numpy(), grp["team_num"].to_numpy())
+        except (TypeError, ValueError):
+            continue
+    return lookup
+
+
+def _side_at(lookup: dict, sid: str, tick: int):
+    """Return 'CT'/'T' for a steamid at a tick (nearest earlier sample), else None."""
+    entry = lookup.get(str(int(sid))) if sid and sid not in ("0", "nan") else None
+    if not entry:
+        return None
+    ticks, teams = entry
+    i = int(np.searchsorted(ticks, tick, side="right")) - 1
+    if i < 0:
+        return None
+    t = int(teams[i])
+    return "CT" if t == 3 else ("T" if t == 2 else None)
+
+
+def parse_demo(dem_path: str, session_id: str = None) -> dict:
+    from parser_foundation import Demo
 
     demo = Demo(dem_path)
     demo.parse()
@@ -1930,46 +2502,60 @@ def parse_demo(dem_path: str) -> dict:
         "duration": _duration(h),
     }
 
-    # ---- Build per-round side mapping from kills ----
-    kills_df = _to_pd(demo.kills)
-    round_sides = {}
+    # Team labels are fixed in CS2: one side is CT, the other T — the
+    # frontend colors players by these labels, so they are constants.
     ct_team = "CT"
     t_team  = "T"
-    if kills_df is not None and "ct_side" in kills_df.columns:
-        for _, row in kills_df.iterrows():
-            rnum = int(row.get("round_num", 0) or 0)
-            if rnum not in round_sides:
-                round_sides[rnum] = {
-                    "ct": str(row.get("ct_side") or "CT"),
-                    "t":  str(row.get("t_side")  or "T"),
-                }
-        if round_sides:
-            last   = round_sides[max(round_sides)]
-            ct_team = last["ct"]
-            t_team  = last["t"]
+
+    kills_df = _to_pd(demo.kills)
+
+    rounds_df = _to_pd(demo.rounds)
+    # Per-round winning side — fallback attribution only (see _kill_sides below).
+    round_winner = {}
+    if rounds_df is not None:
+        for _, row in rounds_df.iterrows():
+            round_winner[int(row.get("round_num", 0) or 0)] = str(row.get("winner", "") or "").upper()
+
+    def _opposite(side: str) -> str:
+        return "T" if side == "CT" else "CT"
+
+    # Ground truth for kill-team attribution: each player's actual team at the
+    # kill tick (per-tick team_num tracks half-time swaps).  This is required
+    # because in timer/defuse endings the losing side can have survivors and
+    # the winning side can have victims, so the round winner alone is not a
+    # reliable side source.
+    tick_side = _tick_side_lookup(demo)
 
     # ---- Rounds ----
+    # Per-round start/end ticks come from demoparser2's round_start/round_end
+    # events (parser_foundation.round_index: (round, start_tick, end_tick)).
+    # 0 means "unknown" (e.g. last round still running) → None in the payload.
+    # Used by the results page for kill-feed timestamps and jump-list times.
+    round_ticks = {
+        ri[0]: (ri[1] or None, ri[2] or None) for ri in (demo.round_index or [])
+    }
     rounds = []
-    rounds_df = _to_pd(demo.rounds)
     if rounds_df is not None:
         ct_score = t_score = 0
         for _, row in rounds_df.iterrows():
             rnum   = int(row.get("round_num", 0) or 0)
-            winner = str(row.get("winner", "?") or "?")
-            sides  = round_sides.get(rnum, {"ct": ct_team, "t": t_team})
-            if winner == sides["ct"]:
+            winner = str(row.get("winner", "?") or "?").upper()
+            if winner == "CT":
                 winner_side = "CT"; ct_score += 1
-            elif winner == sides["t"]:
+            elif winner == "T":
                 winner_side = "T";  t_score  += 1
             else:
                 winner_side = winner
             reason = str(row.get("reason", "?") or "?").replace("_", " ").title()
+            st, et = round_ticks.get(rnum, (None, None))
             rounds.append({
                 "round_num":   rnum,
                 "winner_side": winner_side,
                 "reason":      reason,
                 "ct_score":    ct_score,
                 "t_score":     t_score,
+                "start_tick":  st,
+                "end_tick":    et,
             })
 
     ct_wins = sum(1 for r in rounds if r["winner_side"] == "CT")
@@ -1977,32 +2563,52 @@ def parse_demo(dem_path: str) -> dict:
 
     # ---- Kills ----
     kills = []
-    if kills_df is not None:
+    if kills_df is not None and not kills_df.empty:
         for _, row in kills_df.iterrows():
-            attacker_side = str(row.get("attacker_side") or "")
-            victim_side   = str(row.get("victim_side")   or "")
+            attacker_sid = str(row.get("attacker_steamid", "") or "")
+            victim_sid   = str(row.get("victim_steamid", "") or "")
             rnum          = int(row.get("round_num", 0) or 0)
-            sides         = round_sides.get(rnum, {"ct": ct_team, "t": t_team})
-            att_team = sides["ct"] if attacker_side.upper() == "CT" else sides["t"]
-            vic_team = sides["ct"] if victim_side.upper()   == "CT" else sides["t"]
+            tick          = int(row.get("tick", 0) or 0)
+            winner        = round_winner.get(rnum, "")
+
+            # 1) Prefer per-tick team data (ground truth, swap-aware; also the
+            #    only source that is correct when a match has friendly fire on).
+            vic_team = _side_at(tick_side, victim_sid, tick)
+            att_team = _side_at(tick_side, attacker_sid, tick)
+            # Cross-fill from the other player's side only as a last resort:
+            # correct for the overwhelmingly common FF-off case, approximate
+            # otherwise.
+            if vic_team and not att_team:
+                att_team = _opposite(vic_team)
+            if att_team and not vic_team:
+                vic_team = _opposite(att_team)
+            # 2) Fallback: infer from the round winner (killer → winning side,
+            #    victim → losing side; both same side on a suicide).
+            if (not vic_team or not att_team) and winner in ("CT", "T"):
+                v = _opposite(winner)
+                vic_team = vic_team or v
+                att_team = att_team or (v if (attacker_sid and victim_sid and attacker_sid == victim_sid) else winner)
+            vic_team = vic_team or "?"
+            att_team = att_team or "?"
+
             kills.append({
                 "tick":          int(row.get("tick", 0) or 0),
                 "round_num":     rnum,
-                "attacker":      str(row.get("attacker_name") or "?"),
+                "attacker":      _safe(row.get("attacker_name"), "?"),
                 "attacker_team": att_team,
-                "victim":        str(row.get("victim_name") or "?"),
+                "victim":        _safe(row.get("victim_name"), "?"),
                 "victim_team":   vic_team,
-                "weapon":        str(row.get("weapon") or "?"),
+                "weapon":        _safe(row.get("weapon"), "?"),
                 "headshot":      bool(row.get("headshot")),
                 "through_smoke": bool(row.get("thrusmoke")),
                 "no_scope":      bool(row.get("noscope")),
                 "penetrated":    bool(row.get("penetrated")),
-                "assister":      str(row.get("assister_name") or ""),
+                "assister":      _safe(row.get("assister_name"), "") or "",
             })
 
     # ---- Steam ID map (name -> steamid64) ----
     steamids: dict = {}
-    if kills_df is not None:
+    if kills_df is not None and not kills_df.empty:
         for col_name, col_id in [("attacker_name", "attacker_steamid"), ("victim_name", "victim_steamid")]:
             if col_name in kills_df.columns and col_id in kills_df.columns:
                 for name, sid in zip(kills_df[col_name], kills_df[col_id]):
@@ -2021,19 +2627,29 @@ def parse_demo(dem_path: str) -> dict:
 
     for k in kills:
         att, vic = k["attacker"], k["victim"]
-        if att and att != "nan" and att != "?":
+        # Self-kill: attacker and victim are the same player — count the
+        # death, but do not credit a kill (or headshot).
+        self_kill = bool(att and vic and att == vic)
+        if att and att != "nan" and att != "?" and not self_kill:
             inc(att, "kills")
             if k["headshot"]: inc(att, "hs")
-            stats[att].setdefault("team", k["attacker_team"])
         if vic and vic != "nan" and vic != "?":
             inc(vic, "deaths")
-            stats.setdefault(vic, {}).setdefault("team", k["victim_team"])
+        # Team label: use the player's side in their LAST recorded action so
+        # players who swapped sides at half-time show under their final side.
+        for p, side in ((att, k["attacker_team"]), (vic, k["victim_team"])):
+            if p and p not in ("nan", "?") and side in ("CT", "T"):
+                stats.setdefault(p, {})["team"] = side
+        assister = k.get("assister") or ""
+        if assister and assister not in ("nan", "?"):
+            inc(assister, "assists")
 
     damages_df = _to_pd(demo.damages)
-    if damages_df is not None:
+    if damages_df is not None and not damages_df.empty:
         for _, row in damages_df.iterrows():
             att = row.get("attacker_name")
-            if att and str(att) != "nan":
+            # "?" is the bomb (planted_c4) or an unattributed entity — not a player.
+            if att and str(att) not in ("nan", "?"):
                 dmg = int(row.get("dmg_health_real") or row.get("dmg_health") or 0)
                 inc(str(att), "dmg", dmg)
 
@@ -2063,7 +2679,7 @@ def parse_demo(dem_path: str) -> dict:
     swag_breakdown = extract_cosmetics(dem_path)
 
     # ---- Tick data (player positions) ----
-    session_id = str(uuid.uuid4())
+    session_id = session_id or str(uuid.uuid4())
     ticks_by_round    = extract_ticks(demo, dem_path)
     grenades_by_round = extract_grenades(dem_path, ticks_by_round)
     events_by_round   = extract_events(dem_path, ticks_by_round)
@@ -2096,14 +2712,46 @@ def parse_demo(dem_path: str) -> dict:
     }
 
 
+# ── Static frontend (built React SPA) ──────────────────────────────────────────
+# The React app is built into static_react/ (`npm run build` inside frontend/).
+# Client-side routes: /, /loadout/:demoId, /results/:demoId, /map/:demoId,
+# /aim/:demoId, /admin — all served by index.html, so unknown non-API paths
+# fall back to the SPA entry point.
+STATIC_DIR = Path(__file__).parent / "static_react"
+_SPA_FIRST_SEGMENTS = {"loadout", "results", "map", "aim", "admin"}
+
+
+def _serve_spa_index():
+    index_file = STATIC_DIR / "index.html"
+    if not index_file.exists():
+        return (
+            "<h1>Frontend not built</h1>"
+            "<p>Run <code>npm run build</code> inside <code>frontend/</code> to produce "
+            "<code>static_react/</code>.</p>",
+            503,
+        )
+    return send_from_directory(str(STATIC_DIR), "index.html")
+
+
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return _serve_spa_index()
 
 
-@app.route("/viewer")
-def viewer():
-    return render_template("viewer.html")
+@app.route("/<path:subpath>")
+def spa_or_static(subpath):
+    """Serve built-frontend assets; fall back to the SPA for client routes."""
+    # 1) Static file from the build output (assets/, favicon.svg, icons.svg, …).
+    #    send_from_directory already guards against path traversal; the prefix
+    #    check is belt-and-braces.
+    static_root = STATIC_DIR.resolve()
+    candidate = (STATIC_DIR / subpath).resolve()
+    if candidate.is_file() and str(candidate).startswith(str(static_root)):
+        return send_from_directory(str(STATIC_DIR), subpath)
+    # 2) Client-side SPA routes (e.g. /viewer/abc-123, /loadout/xyz, /admin).
+    if subpath.split("/", 1)[0] in _SPA_FIRST_SEGMENTS:
+        return _serve_spa_index()
+    return jsonify({"error": "Not found"}), 404
 
 
 @app.route("/api/parse", methods=["POST"])
@@ -2119,43 +2767,31 @@ def api_parse():
         tmp_path = tmp.name
         f.save(tmp_path)
 
-    _t0 = time.monotonic()
-    try:
-        data = parse_demo(tmp_path)
-        data["filename"] = f.filename
-        session_id = data["session_id"]
-        cached = _session_cache.get(session_id, {})
-        ticks    = cached.get("ticks", {})
-        grenades = cached.get("grenades", {})
-        events   = cached.get("events", {})
-        _db_save(session_id, f.filename, data["header"]["map"], data, ticks, grenades, events)
+    job_id = str(uuid.uuid4())
+    _register_job(job_id, f.filename, tmp_path)
+    threading.Thread(target=_run_parse_job, args=(job_id,), daemon=True).start()
+    return jsonify({"job_id": job_id, "status": "parsing"}), 202
 
-        # Persist the .dem file so re-parse endpoints (tracers etc.) can reuse it
-        stored_path = DEMOS_DIR / f"{session_id}.dem"
-        import shutil
-        shutil.copy2(tmp_path, stored_path)
-        if session_id in _session_cache:
-            _session_cache[session_id]["dem_path"] = str(stored_path)
 
-        elapsed = time.monotonic() - _t0
-        log.info("parse: completed %s — map=%s rounds=%s ticks=%s (%.2fs)",
-                 f.filename, data["header"].get("map"),
-                 data.get("total_rounds"), len(ticks), elapsed)
-        return jsonify(data)
-    except Exception as e:
-        log.error("parse: failed for %s — %s", f.filename, e, exc_info=True)
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
+@app.route("/api/jobs/<job_id>")
+def api_jobs_status(job_id):
+    """Poll the status of a background parse job (started by /api/parse)."""
+    with _jobs_lock:
+        job = _parse_jobs.get(job_id)
+        if job is None:
+            return jsonify({"error": "Unknown job — the server may have restarted"}), 404
+        snapshot = dict(job)
+    snapshot.pop("tmp_path", None)
+    return jsonify(snapshot)
 
 
 @app.route("/api/ticks/<session_id>/<int:round_num>")
 def api_ticks(session_id, round_num):
     session = _session_cache.get(session_id)
+    if session is None:
+        session = _db_load_session(session_id)
+    else:
+        _session_cache.move_to_end(session_id)  # LRU: a hit refreshes recency
     if not session:
         return jsonify({"error": "Session expired — please re-upload the demo"}), 404
     frames   = session["ticks"].get(round_num, [])
@@ -2172,92 +2808,44 @@ def api_ticks(session_id, round_num):
     return jsonify({"frames": frames, "count": len(frames), "grenades": grenades, "events": events, "shots": shots})
 
 
-@app.route("/api/probe_bullets/<session_id>/<int:round_num>")
-def api_probe_bullets(session_id, round_num):
-    """Probe endpoint: try parsing bullet_impact for one round and report what comes back."""
-    session = _session_cache.get(session_id)
-    # If not in memory cache, check if the stored .dem exists directly
-    stored = DEMOS_DIR / f"{session_id}.dem"
-    if session:
-        dem_path = session.get("dem_path") or (str(stored) if stored.exists() else None)
-    elif stored.exists():
-        dem_path = str(stored)
-    else:
-        return jsonify({"error": "Session expired and no stored .dem found"}), 404
-    if not dem_path:
-        return jsonify({"error": "No dem_path available"}), 404
-    try:
-        from demoparser2 import DemoParser
-        parser = DemoParser(dem_path)
-
-        # weapon_fire with yaw requested via player prop
-        rows = None
-        try:
-            rows = parser.parse_event("weapon_fire", player=["name", "yaw", "pitch", "X", "Y"])
-        except Exception as e1:
-            return jsonify({"error": f"weapon_fire parse failed: {e1}"})
-
-        if rows is None or (hasattr(rows, '__len__') and len(rows) == 0):
-            return jsonify({"error": "weapon_fire returned no data"})
-
-        # Also probe parse_ticks for yaw to confirm it's available that way
-        yaw_tick_cols = []
-        try:
-            tdf = parser.parse_ticks(["yaw", "pitch"])
-            if tdf is not None:
-                yaw_tick_cols = list(tdf.columns)
-        except Exception as ey:
-            yaw_tick_cols = [f"error: {ey}"]
-
-        if rows is None or (hasattr(rows, '__len__') and len(rows) == 0):
-            return jsonify({"error": "bullet_impact returned no data"})
-
-        # rows may be a DataFrame or list of (name, df) tuples
-        import pandas as pd
-        if isinstance(rows, list):
-            df = rows[0][1] if rows and isinstance(rows[0], tuple) else pd.DataFrame(rows)
-        else:
-            df = rows
-
-        if df is None or df.empty:
-            return jsonify({"error": "bullet_impact DataFrame is empty"})
-
-        # Filter to the requested round if round_num column exists
-        cols = list(df.columns)
-        round_df = df[df["round"] == round_num] if "round" in cols else \
-                   df[df["round_num"] == round_num] if "round_num" in cols else df
-
-        return jsonify({
-            "columns": cols,
-            "total_rows": len(df),
-            "round_rows": len(round_df),
-            "sample": round_df.head(10).to_dict(orient="records"),
-            "yaw_tick_cols": yaw_tick_cols,
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
 @app.route("/api/map_info/<map_name>")
 def api_map_info(map_name):
-    return jsonify(_get_map_bounds(map_name))
+    data = _get_map_bounds(map_name)
+    data["floors"] = _map_floors(map_name)
+    return jsonify(data)
 
 
 @app.route("/api/maps_ready")
 def api_maps_ready():
-    import awpy.data
-    maps_dir = awpy.data.MAPS_DIR
-    ready = maps_dir.exists() and any(maps_dir.glob("*.png"))
-    return jsonify({"ready": ready})
+    # Check for map images in local directories first (no awpy dependency)
+    for search_dir in [
+        Path(__file__).parent / "maps",
+        Path(__file__).parent / "images" / "maps",
+    ]:
+        if search_dir.exists() and any(search_dir.glob("*.png")):
+            return jsonify({"ready": True})
+    # Fallback to awpy if installed
+    try:
+        import awpy.data
+        maps_dir = awpy.data.MAPS_DIR
+        ready = maps_dir.exists() and any(maps_dir.glob("*.png"))
+        return jsonify({"ready": ready})
+    except Exception:
+        return jsonify({"ready": False})
 
 
 @app.route("/api/download_maps", methods=["POST"])
 def api_download_maps():
+    # Map images can be placed in maps/ or images/maps/ directories.
+    # If awpy is installed, use it to fetch; otherwise return success (user may have placed images manually).
     try:
         import awpy.data, awpy.data.utils
         awpy.data.utils.create_data_dir_if_not_exists()
         awpy.data.utils.fetch_resource("maps", awpy.data.CURRENT_BUILD_ID)
         return jsonify({"success": True})
+    except ImportError:
+        # No awpy — user can place map images manually in maps/ or images/maps/
+        return jsonify({"success": True, "message": "awpy not installed; place map images manually"})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -2271,12 +2859,33 @@ def serve_image(filename):
 
 @app.route("/api/map_image/<map_name>")
 def api_map_image(map_name):
-    import awpy.data
-    maps_dir = awpy.data.MAPS_DIR
-    for name in [map_name, f"{map_name}_lower"]:
-        img_path = maps_dir / f"{name}.png"
+    return _serve_map_image(map_name, "default")
+
+
+@app.route("/api/map_image/<map_name>/<floor>")
+def api_map_image_floor(map_name, floor):
+    return _serve_map_image(map_name, floor)
+
+
+def _serve_map_image(map_name: str, floor: str):
+    """Serve a map floor image. Floor ``default`` → <map>.png, otherwise
+    <map>_<floor>.png.  Local maps/ first; awpy is a last-resort fallback."""
+    fname = map_name if floor == "default" else f"{map_name}_{floor}"
+    for search_dir in [
+        Path(__file__).parent / "maps",
+        Path(__file__).parent / "images" / "maps",
+        Path(__file__).parent / "images",
+    ]:
+        img_path = search_dir / f"{fname}.png"
         if img_path.exists():
             return send_file(str(img_path), mimetype="image/png")
+    try:
+        import awpy.data
+        img_path = awpy.data.MAPS_DIR / f"{fname}.png"
+        if img_path.exists():
+            return send_file(str(img_path), mimetype="image/png")
+    except Exception:
+        pass
     return "", 404
 
 
@@ -2335,7 +2944,8 @@ def api_demos_loadout(demo_id):
                     "headshot_pct": 0.0,
                     "total_damage": 0,
                     "weapons": [],
-                    "agent": None,
+                    "ct_agent": None,
+                    "t_agent": None,
                     "skins": []
                 }
             
@@ -2354,7 +2964,9 @@ def api_demos_loadout(demo_id):
             
             # Process cosmetics
             if cosmetic["is_agent"]:
-                p["agent"] = {
+                # Agents split by side (a 'both'-class agent goes to both) —
+                # the old single p["agent"] slot overwrote per row (last won).
+                agent = {
                     "def_index": cosmetic["def_index"],
                     "item_name": cosmetic["item_name"],
                     "skin_name": cosmetic["skin_name"],
@@ -2366,6 +2978,10 @@ def api_demos_loadout(demo_id):
                     "stattrak": cosmetic["stattrak"],
                     "side": cosmetic["side"]
                 }
+                if cosmetic["side"] in ("CT", "both"):
+                    p["ct_agent"] = agent
+                if cosmetic["side"] in ("T", "both"):
+                    p["t_agent"] = agent
             else:
                 # Add to skins list
                 p["skins"].append({
@@ -2413,16 +3029,61 @@ def api_demos_loadout(demo_id):
     return jsonify(loadout_data)
 
 
+@app.route("/api/demos/<demo_id>/reparse", methods=["POST"])
+def api_demos_reparse(demo_id):
+    """Re-run the parser over the stored .dem and replace this demo's data.
+
+    Used to fix demos parsed with an older/buggy parser version (e.g. rows
+    with round_num=0).  Requires the original .dem to still be in demos_store/.
+    """
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    row = con.execute("SELECT id, filename FROM demos WHERE id = ?", (demo_id,)).fetchone()
+    con.close()
+    if not row:
+        return jsonify({"error": "Demo not found"}), 404
+
+    dem_path = DEMOS_DIR / f"{demo_id}.dem"
+    if not dem_path.exists():
+        return jsonify({"error": "Stored .dem file not found in demos_store — re-upload to rebuild this demo"}), 410
+
+    log.info("reparse: starting — demo_id=%s", demo_id)
+    t0 = time.monotonic()
+    try:
+        data = parse_demo(str(dem_path), session_id=demo_id)
+    except Exception as e:
+        log.error("reparse: failed for %s — %s", demo_id, e, exc_info=True)
+        return jsonify({"error": f"Re-parse failed: {e}"}), 500
+
+    filename = row["filename"] or f"{demo_id}.dem"
+    data["filename"] = filename
+    if demo_id in _session_cache:
+        _session_cache.move_to_end(demo_id)  # LRU: a read refreshes recency
+    cached = _session_cache.get(demo_id, {})
+    _db_save(demo_id, filename, data["header"]["map"], data,
+             cached.get("ticks"), cached.get("grenades"), cached.get("events"),
+             cached.get("shots"))
+
+    elapsed = time.monotonic() - t0
+    log.info("reparse: completed %s — rounds=%s ticks=%d (%.2fs)",
+             demo_id, data.get("total_rounds"), len(cached.get("ticks", {})), elapsed)
+    return jsonify(data)
+
+
 @app.route("/api/demos/<demo_id>", methods=["DELETE"])
 def api_demos_delete(demo_id):
     if _db_delete(demo_id):
+        # Remove the stored .dem so the library doesn't orphan gigabytes
+        dem_file = DEMOS_DIR / f"{demo_id}.dem"
+        if dem_file.exists():
+            try:
+                dem_file.unlink()
+            except OSError as e:
+                log.warning("delete: could not remove %s — %s", dem_file, e)
+        # Drop the in-memory session, if any
+        _session_cache.pop(demo_id, None)
         return jsonify({"deleted": demo_id})
     return jsonify({"error": "Demo not found"}), 404
-
-
-@app.route("/admin")
-def admin():
-    return render_template("admin.html")
 
 
 @app.route("/api/admin/query", methods=["POST"])

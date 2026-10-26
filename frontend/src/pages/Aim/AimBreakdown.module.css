@@ -1,0 +1,67 @@
+/* Shared aim-breakdown styles — used by the standalone /aim page and the
+   Results page's Aim tab (AimBreakdown.jsx). Paper & ink design system. */
+
+/* ── Player list + detail layout ── */
+.aimLayout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.aimPlayerList {
+  background: rgb(var(--paper));
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
+  overflow: hidden;
+  position: sticky;
+  top: 72px;
+}
+.aimPlayerBtn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgb(var(--grey-100));
+  color: var(--muted);
+  font-size: .83rem;
+  cursor: pointer;
+  transition: background .1s, color .1s;
+}
+.aimPlayerBtn:last-child { border-bottom: none; }
+.aimPlayerBtn:hover  { background: rgb(var(--grey-100)); color: rgb(var(--ink)); }
+.aimPlayerBtn.active { background: rgb(var(--grey-100)); color: rgb(var(--ct)); font-weight: 700; }
+
+.aimDetail { display: flex; flex-direction: column; gap: 14px; }
+
+.aimCard {
+  background: rgb(var(--paper));
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.aimCard h4 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.aimStatsRow { display: flex; gap: 24px; flex-wrap: wrap; }
+.aimStat     { display: flex; flex-direction: column; gap: 2px; cursor: default; }
+.aimStatVal  {
+  font-family: 'Doto', monospace;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: rgb(var(--ink));
+}
+.aimStatLbl  { font-size: 11px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); border-bottom: 1px dashed rgb(var(--grey-200)); }
+
+/* ── Hit group bars ── */
+.hgRow    { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; font-size: .82rem; }
+.hgLabel  { width: 72px; color: var(--muted); flex-shrink: 0; }
+.hgBarBg  { flex: 1; height: 10px; background: rgb(var(--grey-200)); border-radius: var(--radius); overflow: hidden; }
+.hgBarFill{ height: 100%; border-radius: var(--radius); transition: width .3s; }
+.hgCount  { width: 32px; text-align: right; color: var(--muted); font-size: .78rem; }
+.hgPct    { width: 36px; text-align: right; font-size: .78rem; }

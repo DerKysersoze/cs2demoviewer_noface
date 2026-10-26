@@ -15,9 +15,10 @@
 }
 
 .panelHeading {
-  font-size: .72rem;
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: .08em;
+  letter-spacing: .14em;
   color: var(--muted);
   margin-bottom: 10px;
 }
@@ -27,7 +28,7 @@
 .schemaTableName {
   font-weight: 700;
   font-size: .85rem;
-  color: var(--ct);
+  color: rgb(var(--ct));
   margin-bottom: 6px;
   cursor: pointer;
   display: flex;
@@ -47,7 +48,7 @@
 }
 .colName { color: var(--text); flex: 1; }
 .colType { color: var(--muted); font-size: .7rem; }
-.colPk   { color: var(--t); font-size: .65rem; font-weight: 700; }
+.colPk   { color: rgb(var(--t)); font-size: .65rem; font-weight: 700; }
 
 .quickPanel { margin-top: 20px; }
 
@@ -60,7 +61,7 @@
   color: var(--muted);
   font-size: .75rem;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   cursor: pointer;
   margin-bottom: 5px;
   transition: background .12s, color .12s, border-color .12s;
@@ -68,7 +69,7 @@
 .quickBtn:hover {
   background: var(--surface2);
   color: var(--text);
-  border-color: var(--muted);
+  border-color: rgb(var(--ink));
 }
 
 /* ── Editor panel ── */
@@ -81,9 +82,10 @@
 }
 
 .editorLabel {
-  font-size: .72rem;
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: .07em;
+  letter-spacing: .14em;
   color: var(--muted);
 }
 
@@ -102,7 +104,7 @@
   transition: border-color .15s;
   tab-size: 2;
 }
-.sqlEditor:focus { border-color: var(--ct); }
+.sqlEditor:focus { border-color: rgb(var(--ink)); }
 
 .runBar {
   display: flex;
@@ -110,8 +112,8 @@
   gap: 10px;
 }
 
-.statusOk  { color: var(--green); font-size: .78rem; }
-.statusErr { color: var(--red);   font-size: .78rem; }
+.statusOk  { color: rgb(var(--green)); font-size: .78rem; }
+.statusErr { color: rgb(var(--red));   font-size: .78rem; }
 .statusDim { color: var(--muted); font-size: .78rem; }
 
 /* ── Results ── */
@@ -137,7 +139,7 @@
 }
 .resultsTable th {
   background: var(--surface2);
-  color: var(--ct);
+  color: rgb(var(--ct));
   font-weight: 600;
   font-size: .72rem;
   text-transform: uppercase;
@@ -167,4 +169,4 @@
 
 /* ── Shared ── */
 .dim     { color: var(--muted); font-size: .8rem; }
-.errText { color: var(--red); font-size: .8rem; }
+.errText { color: rgb(var(--red)); font-size: .8rem; }

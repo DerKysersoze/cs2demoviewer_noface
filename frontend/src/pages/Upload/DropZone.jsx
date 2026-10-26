@@ -1,6 +1,10 @@
 import { useRef, useState } from 'react'
 import styles from './Upload.module.css'
 
+/**
+ * Slim upload strip (front page, mockup option A). Click anywhere (or the
+ * Choose files button) to pick, or drop .dem files on it.
+ */
 export default function DropZone({ onFiles }) {
   const [dragOver, setDragOver] = useState(false)
   const inputRef  = useRef(null)
@@ -17,29 +21,39 @@ export default function DropZone({ onFiles }) {
     pickFiles(e.dataTransfer.files)
   }
 
+  function openPicker() {
+    inputRef.current?.click()
+  }
+
   function onInputChange() {
     pickFiles(inputRef.current.files)
     inputRef.current.value = ''
   }
 
   function onZoneClick(e) {
-    if (e.target.tagName === 'BUTTON') return
-    inputRef.current.click()
+    if (e.target.closest('button')) return
+    openPicker()
   }
 
   return (
     <div
-      className={[styles.dropZone, dragOver ? styles.dragOver : ''].join(' ')}
+      className={[styles.dropStrip, dragOver ? styles.dragOver : ''].join(' ')}
       onDragOver={e => { e.preventDefault(); setDragOver(true) }}
       onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
       onClick={onZoneClick}
     >
-      <div className={styles.dropIcon}>🎮</div>
-      <strong>Drop .dem files here</strong>
-      <p>Single file opens the viewer · Multiple files are queued and saved</p>
-      <button className="btn btn-primary" style={{ marginTop: 20 }}>
-        Choose Files
+      <span className={styles.dsIcon} aria-hidden="true">⬆</span>
+      <div className={styles.dsText}>
+        <strong>Drop .dem files here</strong>
+        <span>· single file opens results instantly · multiple are queued</span>
+      </div>
+      <button
+        type="button"
+        className="btn btn-primary"
+        onClick={e => { e.stopPropagation(); openPicker() }}
+      >
+        Choose files
       </button>
       <input
         ref={inputRef}

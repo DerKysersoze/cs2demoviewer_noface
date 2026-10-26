@@ -1,0 +1,786 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Results page — match results layout (paper & ink).
+   Mirrors the reference MatchReview: header band → stats → round chips →
+   story + sticky side panel → danger zone.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+}
+
+.center {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.notFoundTitle {
+  font-size: 32px;
+  font-weight: 700;
+}
+
+/* ── Shared ───────────────────────────────────────────────────────────────── */
+
+.metaLine {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgb(var(--grey-600));
+}
+
+.section {
+  margin-bottom: 32px;
+}
+
+.sectionLabel {
+  display: block;
+  margin-bottom: 12px;
+  color: rgb(var(--grey-600));
+}
+
+.blockLabel {
+  display: block;
+  margin-bottom: 12px;
+  color: rgb(var(--grey-600));
+}
+
+/* ── Match header ─────────────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 28px;
+  margin-bottom: 32px;
+  border-bottom: 1px solid rgb(var(--grey-200));
+}
+
+.mapName {
+  margin-top: 8px;
+  font-size: clamp(42px, 7vw, 64px);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.headerRightText {
+  text-align: right;
+}
+
+.score {
+  font-family: 'Doto', monospace;
+  font-size: clamp(32px, 5vw, 48px);
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.winnerBadge {
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+
+.winnerCt {
+  background: rgb(var(--ink));
+  color: rgb(var(--paper));
+}
+
+.winnerT {
+  border: 1px solid rgb(var(--ink));
+  color: rgb(var(--ink));
+}
+
+.winnerDraw {
+  background: rgb(var(--grey-200));
+  color: rgb(var(--grey-600));
+}
+
+/* ── Tab bar (Overview / Rounds / Aim / Players) ────────────────────────── */
+
+.tabbar {
+  position: sticky;
+  top: 49px; /* sits directly under the sticky site header (49px tall) */
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  padding: 0 4px;
+  margin-bottom: 24px;
+  background: rgb(var(--paper));
+  border-bottom: 1px solid rgb(var(--grey-200));
+}
+
+.tablist {
+  display: flex;
+  gap: 4px;
+}
+
+/* Loadout CTA — right end of the tab bar (micro-label, same voice as the tabs) */
+.tabCta {
+  margin-left: auto;
+  padding: 13px 14px 12px 28px;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 18px;
+  background: none;
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgb(var(--grey-600));
+  cursor: pointer;
+  border-bottom: 2.5px solid transparent;
+  margin-bottom: -1px; /* active underline overlaps the bar's border */
+  transition: color .12s;
+}
+
+.tab:hover {
+  color: rgb(var(--ink));
+}
+
+.tabOn {
+  color: rgb(var(--ink));
+  border-bottom-color: rgb(var(--ink));
+}
+
+/* ── Stats table ──────────────────────────────────────────────────────────── */
+
+.sortBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sortBtn:hover {
+  color: rgb(var(--ink));
+}
+
+.teamRowCell {
+  background: rgb(var(--grey-100));
+  padding: 8px 12px;
+}
+
+.teamRowAccent {
+  border-top: 2px solid rgb(var(--ink));
+}
+
+.playerCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.teamDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotSolid {
+  background: rgb(var(--ink));
+}
+
+.dotOutline {
+  border: 1px solid rgb(var(--ink));
+  background: transparent;
+}
+
+/* ── Round chips ──────────────────────────────────────────────────────────── */
+
+.chipHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.chipRow {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  transition: transform .12s, box-shadow .12s;
+}
+
+.chip:hover {
+  transform: scale(1.06);
+}
+
+.chipCt {
+  background: rgb(var(--ink));
+  color: rgb(var(--paper));
+}
+
+.chipT {
+  background: rgb(var(--paper));
+  color: rgb(var(--ink));
+  border-color: rgb(var(--ink));
+}
+
+.chipDraw {
+  background: rgb(var(--grey-200));
+  color: rgb(var(--grey-600));
+}
+
+.chipSel {
+  box-shadow: 0 0 0 2px rgb(var(--paper)), 0 0 0 4px rgb(var(--ink));
+}
+
+.chipIcon {
+  font-size: 9px;
+  line-height: 1;
+}
+
+/* ── Rounds split: story rail (left) + map companion (right, main content) ── */
+
+.roundsSplit {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  align-items: start;
+}
+
+.roundsSplit > * {
+  min-width: 0;
+}
+
+/* The map is the main content — first in the single-column layout */
+@media (max-width: 899px) {
+  .roundsSplit > .companion {
+    order: -1;
+  }
+}
+
+@media (min-width: 900px) {
+  .roundsSplit {
+    grid-template-columns: 1fr 4fr;
+  }
+}
+
+/* ── Round story ──────────────────────────────────────────────────────────── */
+
+.story {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.storyHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.storyTitle {
+  margin-top: 4px;
+  font-size: 26px;
+  font-weight: 900;
+}
+
+.storyMeta {
+  text-align: right;
+}
+
+.storyReason {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ── Kill feed ────────────────────────────────────────────────────────────── */
+
+.feed {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.feedDivider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.feedDivider::before,
+.feedDivider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgb(var(--grey-200));
+}
+
+.feedRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgb(var(--grey-100));
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.feedTime {
+  width: 40px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--grey-600));
+}
+
+.feedArrow {
+  color: rgb(var(--grey-400));
+}
+
+.feedWeapon {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgb(var(--grey-600));
+  white-space: nowrap;
+}
+
+.feedAssist {
+  margin-left: auto;
+  font-size: 11px;
+  color: rgb(var(--grey-600));
+}
+
+.badgeSolid,
+.badgeGhost {
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.8;
+  white-space: nowrap;
+}
+
+.badgeSolid {
+  background: rgb(var(--ink));
+  color: rgb(var(--paper));
+}
+
+.badgeGhost {
+  background: rgb(var(--grey-200));
+  color: rgb(var(--grey-600));
+}
+
+/* ── Highlights ───────────────────────────────────────────────────────────── */
+
+.hGrid {
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+@media (min-width: 1024px) {
+  .hGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.hItem {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: none;
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
+  text-align: left;
+  transition: border-color .12s;
+}
+
+/* Cards are divs (they embed Steam profile links, which a <button> may not
+   contain); give the clickable ones a pointer cursor — .hItemDisabled
+   already sets cursor: default. */
+.hItem[role='button'] {
+  cursor: pointer;
+}
+.hItem[role='button']:focus-visible {
+  outline: 2px solid rgb(var(--ink));
+  outline-offset: 2px;
+}
+
+.hItem:hover {
+  border-color: rgb(var(--ink));
+}
+
+.hItemDisabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.hItemDisabled:hover {
+  border-color: rgb(var(--grey-200));
+}
+
+.hIcon {
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.hText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.hTitle {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hDetail {
+  margin-top: 2px;
+  font-size: 11px;
+  color: rgb(var(--grey-600));
+}
+
+/* ── RoundMap companion — "this round on the 2D map" (option C, always on) ── */
+
+.companion {
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
+  background: rgb(var(--paper));
+  overflow: hidden;
+}
+
+.companionHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgb(var(--grey-200));
+}
+
+.companionSub {
+  font-size: 12px;
+  color: rgb(var(--grey-600));
+}
+
+/* "Open fullscreen map" CTA in the companion head (full-page 2D replay) */
+.companionFull {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.companionBody {
+  padding: 16px;
+}
+
+/* ── Players tab — team rail ─────────────────────────────────────────────── */
+
+.rail {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 700px) {
+  .rail {
+    grid-template-columns: 1fr;
+  }
+}
+
+.railCol {
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.railHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgb(var(--grey-100));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgb(var(--grey-600));
+}
+
+.railBtn {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-top: 1px solid rgb(var(--grey-100));
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background .12s;
+}
+
+.railBtn:hover {
+  background: rgb(var(--grey-100));
+}
+
+.railKd {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgb(var(--grey-600));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.railKills {
+  font-family: 'Doto', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.railBtnOn {
+  background: rgb(var(--grey-100));
+  box-shadow: inset 3px 0 0 rgb(var(--ink));
+}
+
+.railBtnOn .railKd {
+  color: rgb(var(--ink));
+}
+
+/* ── Players tab — dossier ───────────────────────────────────────────────── */
+
+.dossier {
+  display: grid;
+  grid-template-columns: 7fr 5fr;
+  gap: 16px;
+  margin-top: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .dossier {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dossierCol {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.dossierCard {
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
+  background: rgb(var(--paper));
+  overflow: hidden;
+}
+
+.dossierName {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgb(var(--grey-200));
+}
+
+.dossierNm {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.dossierSide {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: var(--radius);
+}
+
+.sideCt {
+  background: rgb(var(--ink));
+  color: rgb(var(--paper));
+}
+
+.sideT {
+  border: 1px solid rgb(var(--ink));
+  color: rgb(var(--ink));
+}
+
+.mvpBadge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: rgb(var(--grey-100));
+  border: 1px solid rgb(var(--grey-200));
+  color: rgb(var(--ink));
+  padding: 3px 8px;
+  border-radius: var(--radius);
+}
+
+.dossierBody {
+  padding: 14px 16px;
+}
+
+.cardH4 {
+  margin: 0 0 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgb(var(--grey-600));
+}
+
+/* Stat grid — hairline cells (3 columns) */
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: rgb(var(--grey-200));
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+
+@media (max-width: 560px) {
+  .statGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.statCell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  background: rgb(var(--paper));
+}
+
+.statVal {
+  font-family: 'Doto', monospace;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: rgb(var(--ink));
+}
+
+.statLbl {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgb(var(--grey-600));
+}
+
+/* Hit-location bars (same look as the shared AimBreakdown component) */
+.hgRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 7px;
+  font-size: 12.5px;
+}
+
+.hgLabel {
+  width: 72px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: rgb(var(--grey-600));
+}
+
+.hgBarBg {
+  flex: 1;
+  height: 10px;
+  background: rgb(var(--grey-200));
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.hgBarFill {
+  height: 100%;
+  border-radius: var(--radius);
+  transition: width .3s;
+}
+
+.hgCount {
+  width: 32px;
+  text-align: right;
+  font-size: 12px;
+  color: rgb(var(--grey-600));
+  font-variant-numeric: tabular-nums;
+}
+
+.hgPct {
+  width: 36px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Danger zone ──────────────────────────────────────────────────────────── */
+
+.dangerZone {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid rgb(var(--grey-200));
+}

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
+import { demosApi } from '../api/demos'
 
-// Item states: 'queued' | 'uploading' | 'done' | 'error'
+// Item states: 'queued' | 'uploading' | 'parsing' | 'done' | 'error'
 function makeItem(file, idx) {
   return { idx, name: file.name, state: 'queued', progress: 0, error: null }
 }
@@ -20,38 +21,25 @@ export function useUploadQueue() {
     setItems(prev => prev.map(it => it.idx === idx ? { ...it, ...patch } : it))
   }
 
-  function uploadOne(file, idx) {
-    return new Promise(resolve => {
-      updateItem(idx, { state: 'uploading', progress: 0 })
+  async function uploadOne(file, idx) {
+    updateItem(idx, { state: 'uploading', progress: 0 })
 
-      const fd  = new FormData()
-      fd.append('demo', file)
-      const xhr = new XMLHttpRequest()
-      xhr.open('POST', '/api/parse')
-
-      xhr.upload.addEventListener('progress', e => {
-        if (e.lengthComputable) {
-          updateItem(idx, { progress: Math.round(e.loaded / e.total * 100) })
-        }
+    const fd = new FormData()
+    fd.append('demo', file)
+    try {
+      // Resolves once the server's background parse job finishes.
+      await demosApi.parse(fd, {
+        onProgress: (pct) => updateItem(idx, { progress: pct }),
+        onPhase: (phase) => {
+          if (phase === 'parsing') updateItem(idx, { state: 'parsing', progress: 100 })
+        },
       })
-
-      xhr.onload = () => {
-        if (xhr.status === 200) {
-          updateItem(idx, { state: 'done', progress: 100 })
-          resolve('done')
-        } else {
-          let msg = 'Server error'
-          try { msg = JSON.parse(xhr.responseText).error || msg } catch {}
-          updateItem(idx, { state: 'error', error: msg })
-          resolve('error')
-        }
-      }
-      xhr.onerror = () => {
-        updateItem(idx, { state: 'error', error: 'Network error' })
-        resolve('error')
-      }
-      xhr.send(fd)
-    })
+      updateItem(idx, { state: 'done', progress: 100 })
+      return 'done'
+    } catch (e) {
+      updateItem(idx, { state: 'error', error: e.message || 'Upload failed' })
+      return 'error'
+    }
   }
 
   const start = useCallback(async (files) => {

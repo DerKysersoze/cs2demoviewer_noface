@@ -1,4 +1,8 @@
-awpy
 flask
+demoparser2
 pandas
+polars
 rich
+# awpy: still used for map bounds (MAP_DATA) and map image downloads —
+# parser work has moved to demoparser2; awpy use will be retired in a later phase.
+awpy

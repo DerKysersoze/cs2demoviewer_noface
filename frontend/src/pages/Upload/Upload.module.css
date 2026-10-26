@@ -3,29 +3,33 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 40px 20px;
+  padding: 28px 20px 56px;
 }
 
-/* ── Drop zone ── */
-.dropZone {
+/* ── Upload strip ── */
+.dropStrip {
   width: 100%;
-  max-width: 520px;
-  border: 2px dashed var(--border);
+  max-width: 1100px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  border: 1px dashed rgb(var(--grey-400));
   border-radius: var(--radius);
-  padding: 56px 32px;
-  text-align: center;
+  padding: 10px 14px;
   cursor: pointer;
+  background: var(--surface);
   transition: border-color .2s, background .2s;
 }
-.dropZone:hover,
+.dropStrip:hover,
 .dragOver {
-  border-color: var(--ct);
-  background: rgba(56,189,248,.05);
+  border-color: rgb(var(--ink));
+  background: rgb(var(--grey-100));
 }
-.dropIcon { font-size: 3rem; margin-bottom: 14px; }
-.dropZone p { color: var(--muted); margin-top: 8px; font-size: .88rem; }
-.dropZone strong { color: var(--text); font-size: 1.05rem; }
+.dsIcon { font-size: 1rem; }
+.dsText { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.dsText strong { font-size: .9rem; font-weight: 700; }
+.dsText span { color: var(--muted); font-size: .8rem; }
 
 /* ── Single-file progress ── */
 .progressWrap {
@@ -45,11 +49,11 @@
   margin-bottom: 10px;
 }
 .queueHeader span {
-  font-size: .78rem;
+  font-size: 11px;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: .07em;
-  font-weight: 700;
+  letter-spacing: .14em;
+  font-weight: 600;
 }
 
 .queueList {
@@ -65,13 +69,13 @@
   gap: 10px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 9px 14px;
   transition: border-color .2s;
 }
-.qiUploading { border-color: var(--ct); }
-.qiDone      { border-color: var(--green); }
-.qiError     { border-color: var(--red); }
+.qiUploading { border-color: rgb(var(--ct)); }
+.qiDone      { border-color: rgb(var(--green)); }
+.qiError     { border-color: rgb(var(--red)); }
 
 .qiIcon   { font-size: 1rem; flex-shrink: 0; width: 20px; text-align: center; }
 .qiName   { font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -80,21 +84,21 @@
   white-space: nowrap;
   color: var(--muted);
 }
-.qiUploading .qiStatus { color: var(--ct); }
-.qiDone      .qiStatus { color: var(--green); }
-.qiError     .qiStatus { color: var(--red); }
+.qiUploading .qiStatus { color: rgb(var(--ct)); }
+.qiDone      .qiStatus { color: rgb(var(--green)); }
+.qiError     .qiStatus { color: rgb(var(--red)); }
 
 .qiProgress {
   width: 100%;
   height: 3px;
-  background: var(--border);
-  border-radius: 99px;
+  background: rgb(var(--grey-200));
+  border-radius: var(--radius);
   overflow: hidden;
   margin-top: 5px;
 }
 .qiProgressFill {
   height: 100%;
-  background: var(--ct);
+  background: rgb(var(--ct));
   transition: width .2s;
   animation: indeterminate 1.4s infinite;
 }
@@ -119,58 +123,165 @@
   width: 100%;
   max-width: 520px;
   margin-top: 16px;
-  background: rgba(248,113,113,.1);
-  border: 1px solid var(--red);
-  color: var(--red);
+  background: rgb(var(--red) / .1);
+  border: 1px solid rgb(var(--red));
+  color: rgb(var(--red));
   border-radius: var(--radius);
   padding: 12px 18px;
   font-size: .88rem;
 }
 
-/* ── Demo history ── */
-.historySection { width: 100%; max-width: 520px; margin-top: 40px; }
+/* ── Match library grid (front page, mockup option A) ─────────────────────── */
+.historySection { width: 100%; max-width: 1100px; margin-top: 22px; }
+.gridHead { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
 .historyHeading {
-  font-size: .8rem;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: .08em;
+  letter-spacing: .14em;
   color: var(--muted);
-  margin-bottom: 12px;
 }
+.count { font-size: .78rem; color: var(--muted); }
 .historyEmpty { color: var(--muted); font-size: .85rem; }
-.historyList  { display: flex; flex-direction: column; gap: 8px; }
+.cardGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+}
 
-.demoRow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--surface);
+.card {
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 10px 14px;
+  overflow: hidden;
+  background: var(--surface);
   cursor: pointer;
-  transition: border-color .15s, background .15s;
+  transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
 }
-.demoRow:hover { border-color: var(--ct); background: var(--surface2); }
+.card:hover,
+.card:focus-visible {
+  border-color: rgb(var(--ink));
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgb(0 0 0 / .08);
+}
+.cardImg {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: rgb(var(--grey-100));
+}
+.cardImg > img { width: 100%; height: 100%; object-fit: cover; }
+.cardMap {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  font-family: 'Doto', monospace;
+  font-size: 17px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 6px rgb(0 0 0 / .65);
+}
+.cardDel {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius);
+  border: 1px solid rgb(var(--paper) / .6);
+  background: rgb(10 10 10 / .55);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity .18s ease, background .18s ease;
+}
+.card:hover .cardDel,
+.card:focus-within .cardDel { opacity: 1; }
+.cardDel:hover { background: rgb(var(--red) / .85); }
 
-.demoName {
-  flex: 1;
-  font-weight: 600;
-  font-size: .88rem;
+/* Hover panel — quick stats sliding up over the map image */
+.cardHover {
+  position: absolute;
+  inset: 0;
+  background: rgb(var(--ink) / .93);
+  color: rgb(var(--paper));
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transform: translateY(101%);
+  transition: transform .28s ease;
+}
+.card:hover .cardHover,
+.card:focus-visible .cardHover { transform: translateY(0); }
+.cardHover .micro-label { opacity: .65; }
+.mvp { display: flex; align-items: center; gap: 8px; font-size: .85rem; min-width: 0; }
+.mvp strong {
+  font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.demoMeta { font-size: .75rem; color: var(--muted); white-space: nowrap; }
-.demoDel {
-  background: none;
-  border: none;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: .9rem;
-  padding: 2px 5px;
-  border-radius: 4px;
-  transition: color .15s;
+.mvpStat { margin-left: auto; font-size: .75rem; opacity: .8; white-space: nowrap; }
+.mvpNone { font-size: .8rem; opacity: .6; }
+.cardHoverFoot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: .78rem;
+  opacity: .9;
+}
+.go {
+  font-weight: 700;
+  letter-spacing: .1em;
+  font-size: .68rem;
+  text-transform: uppercase;
+  border-bottom: 1px solid rgb(var(--paper) / .6);
+  padding-bottom: 1px;
+}
+
+.cardBody { padding: 12px 14px 13px; }
+.scoreline { display: flex; align-items: center; gap: 10px; }
+.side {
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.num {
+  font-family: 'Doto', monospace;
+  font-size: 24px;
+  font-weight: 900;
   line-height: 1;
 }
-.demoDel:hover { color: var(--red); }
+/* Readable winner colours — deep tints on light, theme accents on dark */
+.winCT { color: rgb(2 132 199); }
+.winT  { color: rgb(161 98 7); }
+.lose  { color: rgb(var(--grey-400)); }
+:global(.dark) .winCT { color: rgb(var(--ct)); }
+:global(.dark) .winT  { color: rgb(var(--t)); }
+.wbadge {
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  border-radius: var(--radius);
+  white-space: nowrap;
+  margin-left: auto;
+}
+.wbadgeCT { background: rgb(var(--ct) / .16); color: rgb(2 132 199); }
+.wbadgeT  { background: rgb(var(--t) / .20);  color: rgb(161 98 7); }
+:global(.dark) .wbadgeCT { color: rgb(var(--ct)); }
+:global(.dark) .wbadgeT  { color: rgb(var(--t)); }
+.dotCT { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgb(var(--ct)); }
+.dotT  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgb(var(--t)); }
+.cardMeta {
+  margin-top: 9px;
+  font-size: .68rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}

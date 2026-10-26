@@ -1,20 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
 import { demosApi } from '../../api/demos'
+import DemoCard from './DemoCard'
 import styles from './Upload.module.css'
 
-function formatDate(str) {
-  const ts = new Date(str)
-  if (isNaN(ts)) return str
-  return ts.toLocaleString(undefined, {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
-}
-
+/**
+ * Match library grid (front page, mockup option A): one card per demo with
+ * map image, score, winner badge and meta; hover reveals quick stats
+ * (top performer, rounds, duration, CTA). Delete lives on each card.
+ */
 export default function DemoHistory() {
-  const navigate     = useNavigate()
-  const queryClient  = useQueryClient()
+  const queryClient = useQueryClient()
 
   const { data: demos = [], isLoading } = useQuery({
     queryKey: ['demos'],
@@ -30,34 +25,22 @@ export default function DemoHistory() {
 
   return (
     <section className={styles.historySection}>
-      <h2 className={styles.historyHeading}>Previous Demos</h2>
-
-      {demos.length === 0 && (
-        <p className={styles.historyEmpty}>No demos saved yet.</p>
-      )}
-
-      <div className={styles.historyList}>
-        {demos.map(d => (
-          <div
-            key={d.id}
-            className={styles.demoRow}
-            onClick={() => navigate(`/viewer/${d.id}`)}
-          >
-            <div className={styles.demoName} title={d.filename}>{d.filename}</div>
-            <div className={styles.demoMeta}>{d.map} &nbsp;·&nbsp; {formatDate(d.uploaded_at)}</div>
-            <button
-              className={styles.demoDel}
-              title="Delete"
-              onClick={e => {
-                e.stopPropagation()
-                deleteMutation.mutate(d.id)
-              }}
-            >
-              ✕
-            </button>
-          </div>
-        ))}
+      <div className={styles.gridHead}>
+        <h2 className={styles.historyHeading}>Match library</h2>
+        <span className={styles.count}>
+          {demos.length} {demos.length === 1 ? 'match' : 'matches'} · newest first
+        </span>
       </div>
+
+      {demos.length === 0 ? (
+        <p className={styles.historyEmpty}>No demos saved yet — drop one above.</p>
+      ) : (
+        <div className={styles.cardGrid}>
+          {demos.map(d => (
+            <DemoCard key={d.id} demo={d} onDelete={() => deleteMutation.mutate(d.id)} />
+          ))}
+        </div>
+      )}
     </section>
   )
 }

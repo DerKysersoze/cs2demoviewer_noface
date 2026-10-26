@@ -56,17 +56,81 @@ const WEAR_COLOR = {
   'Battle-Scarred': '#f87171',
 }
 
+function WeaponCard({ skin }) {
+  const tierColor = WEAR_COLOR[skin.wear_tier] || 'var(--muted)'
+  return (
+    <div className={styles.skinCard}>
+      <div className={styles.skinImage}>
+        <SkinImage skin={skin} />
+      </div>
+      <div className={styles.skinItemName}>
+        {skin.item_name}
+        {skin.stattrak && <span className={styles.stattrak}> ST</span>}
+      </div>
+      <div className={styles.skinName}>
+        {skin.skin_name || <span className={styles.vanilla}>Vanilla</span>}
+      </div>
+      {skin.custom_name && (
+        <div className={styles.customName}>"{skin.custom_name}"</div>
+      )}
+      {skin.wear_tier && (
+        <div className={styles.wearTier} style={{ color: tierColor }}>
+          {skin.wear_tier}
+          {skin.wear != null && (
+            <span className={styles.wearValue}> {skin.wear}</span>
+          )}
+        </div>
+      )}
+      {skin.side === 'both' && (
+        <div className={styles.bothBadge}>both sides</div>
+      )}
+    </div>
+  )
+}
+
+function SidePanel({ side, player }) {
+  const label = side === 'CT' ? 'CT Side' : 'T Side'
+  const agent = side === 'CT' ? player.ct_agent : player.t_agent
+  const skins = (player.skins || []).filter(s => s.side === side || s.side === 'both')
+  const hasAnyAgent = !!(player.ct_agent || player.t_agent)
+
+  return (
+    <div className={`${styles.sidePanel} ${side === 'CT' ? styles.panelCT : styles.panelT}`}>
+      <div className={`${styles.sideLabel} ${side === 'CT' ? styles.labelCT : styles.labelT}`}>
+        {label}
+      </div>
+
+      {hasAnyAgent && (
+        <div className={styles.agentSection}>
+          {agent ? (
+            <div className={styles.agentCard}>
+              <div className={styles.agentImage}>
+                <AgentImage defIndex={agent.def_index} name={agent.item_name} />
+              </div>
+              <div className={styles.agentName}>{agent.item_name}</div>
+              {agent.skin_name && (
+                <div className={styles.agentType}>{agent.skin_name}</div>
+              )}
+            </div>
+          ) : (
+            <div className={styles.noData}>No {side === 'CT' ? 'CT' : 'T'}-side agent captured</div>
+          )}
+        </div>
+      )}
+
+      <div className={styles.skinsGrid}>
+        {skins.length > 0 ? (
+          skins.map((skin, i) => <WeaponCard key={i} skin={skin} />)
+        ) : (
+          <div className={styles.noData}>No {side === 'CT' ? 'CT' : 'T'}-side loadout captured</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function PlayerCard({ player }) {
   const playerTeam = player.team || 'CT'
-  const [activeSide, setActiveSide] = useState(playerTeam)
-
-  const visibleSkins = (player.skins || []).filter(
-    s => s.side === activeSide || s.side === 'both'
-  )
-
-  const agentForSide = player.agent && (
-    player.agent.side === activeSide || player.agent.side === 'both'
-  ) ? player.agent : null
 
   return (
     <div className={styles.playerCard}>
@@ -75,73 +139,11 @@ function PlayerCard({ player }) {
         <span className={`${styles.teamBadge} ${playerTeam === 'CT' ? styles.ct : styles.t}`}>
           {playerTeam}
         </span>
-        <div className={styles.sideToggle}>
-          {['T', 'CT'].map(side => (
-            <button
-              key={side}
-              className={`${styles.sideBtn} ${activeSide === side ? (side === 'CT' ? styles.activeCT : styles.activeT) : ''}`}
-              onClick={() => setActiveSide(side)}
-            >
-              {side}
-            </button>
-          ))}
-        </div>
       </div>
 
-      {player.agent && (
-        <div className={styles.agentSection}>
-          {agentForSide ? (
-            <div className={styles.agentCard}>
-              <div className={styles.agentImage}>
-                <AgentImage defIndex={agentForSide.def_index} name={agentForSide.item_name} />
-              </div>
-              <div className={styles.agentName}>{agentForSide.item_name}</div>
-              {agentForSide.skin_name && (
-                <div className={styles.agentType}>{agentForSide.skin_name}</div>
-              )}
-            </div>
-          ) : (
-            <div className={styles.noData}>No {activeSide} agent equipped</div>
-          )}
-        </div>
-      )}
-
-      <div className={styles.skinsGrid}>
-        {visibleSkins.length > 0 ? (
-          visibleSkins.map((skin, i) => {
-            const tierColor = WEAR_COLOR[skin.wear_tier] || 'var(--muted)'
-            return (
-              <div key={i} className={styles.skinCard}>
-                <div className={styles.skinImage}>
-                  <SkinImage skin={skin} />
-                </div>
-                <div className={styles.skinItemName}>
-                  {skin.item_name}
-                  {skin.stattrak && <span className={styles.stattrak}> ST</span>}
-                </div>
-                <div className={styles.skinName}>
-                  {skin.skin_name || <span className={styles.vanilla}>Vanilla</span>}
-                </div>
-                {skin.custom_name && (
-                  <div className={styles.customName}>"{skin.custom_name}"</div>
-                )}
-                {skin.wear_tier && (
-                  <div className={styles.wearTier} style={{ color: tierColor }}>
-                    {skin.wear_tier}
-                    {skin.wear != null && (
-                      <span className={styles.wearValue}> {skin.wear}</span>
-                    )}
-                  </div>
-                )}
-                {skin.side === 'both' && (
-                  <div className={styles.bothBadge}>both sides</div>
-                )}
-              </div>
-            )
-          })
-        ) : (
-          <div className={styles.noData}>No {activeSide} skins equipped</div>
-        )}
+      <div className={styles.sidesGrid}>
+        <SidePanel side="CT" player={player} />
+        <SidePanel side="T" player={player} />
       </div>
     </div>
   )
@@ -209,8 +211,8 @@ export default function Loadout() {
       <div className={styles.header}>
         <h1>Loadout — {data.filename}</h1>
         <p>Map: {data.map}</p>
-        <Link to={`/viewer/${demoId}`} className={styles.backButton}>
-          ← Back to Demo Viewer
+        <Link to={`/results/${demoId}`} className={styles.backButton}>
+          ← Back to Results
         </Link>
       </div>
       <LoadoutPanel demoId={demoId} />
