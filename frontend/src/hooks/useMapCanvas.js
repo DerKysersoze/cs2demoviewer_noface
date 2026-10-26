@@ -90,11 +90,18 @@ export function useMapCanvas() {
 
         const fade  = 1 - age / TRACER_TICKS
         const color = playerColorMap[s.player] || '#fff'
-        const from  = worldToCanvas(s.x, s.y, bounds, size)
 
+        // Use current-frame position so tracer is anchored to the visible player dot
+        const shooterFrame = frame.p.find(pl => pl.n === s.player)
+        const from = shooterFrame
+          ? worldToCanvas(shooterFrame.x, shooterFrame.y, bounds, size)
+          : worldToCanvas(s.x, s.y, bounds, size)
+
+        // CS2 yaw: 0°=East, CCW positive. worldToCanvas already handles Y-flip
+        // (pos_y - wy), so we use +sin — no pre-negation needed.
         const radYaw = (s.yaw * Math.PI) / 180
         const wx2 = s.x + Math.cos(radYaw) * TRACER_LENGTH
-        const wy2 = s.y - Math.sin(radYaw) * TRACER_LENGTH  // negate: game +Y = canvas -Y
+        const wy2 = s.y + Math.sin(radYaw) * TRACER_LENGTH
         const to  = worldToCanvas(wx2, wy2, bounds, size)
 
         ctx.beginPath()

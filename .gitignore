@@ -4,7 +4,15 @@ demos.db
 # Downloaded/cached data files (large, regenerated at runtime)
 images/
 skin_names_cache.json
-core.log
+
+# Logs
+*.log
+
+# Runtime demo storage (stored .dem uploads)
+demos_store/
+
+# Vendored demoparser2 reference source (runtime uses the pip package)
+Foundation/
 
 # Python
 __pycache__/
@@ -21,5 +29,11 @@ tasks/
 # Local mockups (not synced)
 mockups/
 
+# Duplicate screenshot folder (identical to screenshots/)
+screenshots_claudedemo/
+
 # Demo parse data (not synced)
 demo_parse_data/
+
+# TESTS
+tests/

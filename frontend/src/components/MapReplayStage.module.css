@@ -1,0 +1,190 @@
+/* MapReplayStage — shared 2D replay core.
+   variant "panel"  → standalone (Results Rounds companion): centered, capped at 520px.
+   variant "inline" → Map page grid: seam-less with the side panels.
+   wide (panel)     → fills the parent column instead of capping at 520px. */
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* ── Floor tabs ─────────────────────────────────────────────────────────── */
+.floorRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto 8px;
+}
+.floorTabs {
+  display: inline-flex;
+  border: 1px solid rgb(var(--ink));
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.floorTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  background: none;
+  border: none;
+  color: rgb(var(--ink));
+  cursor: pointer;
+}
+.floorTab + .floorTab { border-left: 1px solid rgb(var(--ink)); }
+.floorTabActive { background: rgb(var(--ink)); color: rgb(var(--paper)); }
+.floorTabCount { font-variant-numeric: tabular-nums; opacity: .7; }
+.floorHint {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: rgb(var(--grey-600));
+}
+
+/* ── Canvas ─────────────────────────────────────────────────────────────── */
+.stageWrap {
+  position: relative;
+  background: #0a0a10;
+  border: 1px solid rgb(var(--grey-400));
+  border-radius: var(--radius);
+  overflow: hidden;
+  aspect-ratio: 1;
+  width: 100%;
+  max-width: 520px;
+  max-height: 520px;
+  margin: 0 auto;
+}
+.mapCanvas { width: 100%; height: 100%; display: block; }
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(10, 10, 16, .82);
+}
+.overlayIcon { font-size: 2rem; line-height: 1; }
+.overlayMsg {
+  color: #9ca3af;
+  font-size: .88rem;
+  text-align: center;
+  padding: 0 20px;
+}
+
+/* ── Playback bar ───────────────────────────────────────────────────────── */
+.playback {
+  background: rgb(var(--paper));
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
+  max-width: 520px;
+  margin: 8px auto 0;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.zoomLabel {
+  font-size: .72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--grey-600));
+  min-width: 28px;
+  text-align: center;
+}
+.speed {
+  background: rgb(var(--grey-100));
+  border: 1px solid rgb(var(--grey-200));
+  color: rgb(var(--ink));
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: .8rem;
+  width: 64px;
+}
+
+/* ── Timeline scrubber with kill + bomb markers ─────────────────────────── */
+.timeline {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  height: 20px;
+}
+.marker {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 14px;
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 2;
+}
+.bombRegion {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 8px;
+  background: rgba(231, 76, 60, .3);
+  border: 1px solid rgba(231, 76, 60, .55);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 0;
+}
+.scrubber {
+  width: 100%;
+  accent-color: rgb(var(--ct));
+  margin: 0;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Wide variant (Results companion: fills the parent column) ─────────── */
+.stageWide .floorRow {
+  max-width: none;
+}
+.stageWide .stageWrap {
+  max-width: none;
+  max-height: none;
+}
+.stageWide .playback {
+  max-width: none;
+}
+
+/* ── Inline variant (Map page grid: joins the side panels) ─────────────── */
+.stageInline .floorRow {
+  max-width: none;
+  margin: 0 0 8px;
+}
+.stageInline .stageWrap {
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  /* square canvas sized so floor row + canvas + playback ≈ side panel height */
+  max-width: calc(100vh - 360px);
+  max-height: calc(100vh - 360px);
+}
+.stageInline .playback {
+  border-radius: 0 0 var(--radius) var(--radius);
+  border-top: none;
+  max-width: none;
+  margin: 0;
+}

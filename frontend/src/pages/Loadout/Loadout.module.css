@@ -1,43 +1,47 @@
+/* Loadout — paper & ink, tokens from index.css */
 .container {
   min-height: 100vh;
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  color: #e6e6e6;
   padding: 20px;
 }
 
 .header {
   max-width: 1200px;
   margin: 0 auto 30px;
-  padding: 20px;
-  border-bottom: 2px solid #00a8ff;
+  padding: 20px 0 18px;
+  border-bottom: 2px solid rgb(var(--ink));
 }
 
 .header h1 {
   margin: 0 0 10px 0;
-  font-size: 2rem;
-  background: linear-gradient(to right, #00a8ff, #00d2d3);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-family: 'Doto', monospace;
+  font-size: 2.4rem;
+  font-weight: 900;
+  text-transform: lowercase;
+  color: rgb(var(--ink));
 }
 
 .header p {
   margin: 0 0 15px 0;
-  color: #a0a0c0;
+  color: var(--muted);
 }
 
 .backButton {
   display: inline-block;
-  color: #00a8ff;
+  color: rgb(var(--grey-600));
   text-decoration: none;
   padding: 8px 16px;
-  border-radius: 5px;
-  background: rgba(0, 168, 255, 0.1);
-  transition: all 0.3s ease;
+  border: 1px solid rgb(var(--grey-400));
+  border-radius: var(--radius);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  transition: color .15s, border-color .15s;
 }
 
 .backButton:hover {
-  background: rgba(0, 168, 255, 0.2);
-  text-decoration: underline;
+  color: rgb(var(--ink));
+  border-color: rgb(var(--ink));
 }
 
 .content {
@@ -46,13 +50,11 @@
 }
 
 .playerCard {
-  background: rgba(30, 30, 46, 0.8);
-  border-radius: 15px;
+  background: rgb(var(--paper));
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
   padding: 25px;
   margin-bottom: 30px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .playerHeader {
@@ -60,69 +62,88 @@
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 15px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgb(var(--grey-200));
 }
 
 .playerName {
   margin: 0 15px 0 0;
-  font-size: 1.5rem;
-  color: #00d2d3;
+  font-family: 'Doto', monospace;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: rgb(var(--ink));
 }
 
 .teamBadge {
-  padding: 5px 12px;
-  border-radius: 20px;
-  font-size: 0.9rem;
-  font-weight: bold;
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .12em;
   text-transform: uppercase;
 }
 
+/* CT blue / T amber — team identity colours */
 .ct {
-  background: linear-gradient(45deg, #00a8ff, #00d2d3);
+  background: rgb(var(--ct) / .15);
+  color: rgb(var(--ct));
 }
 
 .t {
-  background: linear-gradient(45deg, #ff6b6b, #ff8e8e);
+  background: rgb(var(--t) / .15);
+  color: rgb(var(--t));
 }
 
-.sideToggle {
-  display: flex;
-  gap: 2px;
-  margin-left: auto;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  padding: 2px;
+/* Two side panels per player: CT SIDE | T SIDE */
+.sidesGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
 }
 
-.sideBtn {
-  padding: 4px 12px;
-  border: none;
-  border-radius: 4px;
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  cursor: pointer;
-  background: transparent;
-  color: #a0a0c0;
-  transition: all 0.15s;
+@media (max-width: 900px) {
+  .sidesGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
-.sideBtn.activeCT {
-  background: rgba(0, 168, 255, 0.2);
-  color: #00d2d3;
+.sidePanel {
+  background: rgb(var(--grey-100));
+  border: 1px solid rgb(var(--grey-200));
+  border-top: 2px solid rgb(var(--grey-400));
+  border-radius: var(--radius);
+  padding: 18px;
 }
 
-.sideBtn.activeT {
-  background: rgba(255, 107, 107, 0.2);
-  color: #ff8e8e;
+.sidePanel.panelCT {
+  border-top-color: rgb(var(--ct));
+}
+
+.sidePanel.panelT {
+  border-top-color: rgb(var(--t));
+}
+
+.sideLabel {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--muted);
+  margin-bottom: 15px;
+}
+
+.sideLabel.labelCT {
+  color: rgb(var(--ct));
+}
+
+.sideLabel.labelT {
+  color: rgb(var(--t));
 }
 
 .bothBadge {
-  font-size: 0.65rem;
-  color: #a0a0c0;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 3px;
+  font-size: .65rem;
+  color: var(--muted);
+  background: rgb(var(--grey-100));
+  border-radius: var(--radius);
   padding: 1px 5px;
   margin-top: 4px;
   display: inline-block;
@@ -136,49 +157,56 @@
 }
 
 .statCard {
-  background: rgba(20, 20, 35, 0.7);
-  border-radius: 10px;
+  background: rgb(var(--grey-100));
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
   padding: 15px;
   text-align: center;
-  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .statValue {
+  font-family: 'Doto', monospace;
   font-size: 1.8rem;
-  font-weight: bold;
-  color: #00d2d3;
+  font-weight: 900;
+  color: rgb(var(--ink));
   margin: 5px 0;
 }
 
 .statLabel {
-  font-size: 0.9rem;
-  color: #a0a0c0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--muted);
 }
 
 .tabs {
   display: flex;
   margin-bottom: 25px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgb(var(--grey-200));
 }
 
 .tabButton {
-  padding: 12px 20px;
+  padding: 10px 16px;
   background: transparent;
   border: none;
-  color: #a0a0c0;
+  color: var(--muted);
   cursor: pointer;
-  font-size: 1rem;
-  border-bottom: 3px solid transparent;
-  transition: all 0.3s ease;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color .15s, border-color .15s;
 }
 
 .tabButton:hover {
-  color: #00d2d3;
+  color: rgb(var(--ink));
 }
 
 .tabButton.active {
-  color: #00d2d3;
-  border-bottom: 3px solid #00d2d3;
+  color: rgb(var(--ct));
+  border-bottom: 2px solid rgb(var(--ct));
 }
 
 .weaponsGrid {
@@ -188,18 +216,16 @@
 }
 
 .weaponCard {
-  background: rgba(20, 20, 35, 0.7);
-  border-radius: 10px;
+  background: rgb(var(--paper));
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
   padding: 15px;
   text-align: center;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  transition: all 0.3s ease;
+  transition: border-color .2s;
 }
 
 .weaponCard:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 5px 15px rgba(0, 168, 255, 0.3);
-  border-color: rgba(0, 168, 255, 0.3);
+  border-color: rgb(var(--ink));
 }
 
 .weaponImage {
@@ -209,10 +235,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
+  background: rgb(var(--grey-100));
+  border-radius: var(--radius);
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgb(var(--grey-200));
 }
 
 .placeholderImage {
@@ -220,15 +246,16 @@
 }
 
 .weaponName {
-  font-size: 1rem;
-  font-weight: 600;
+  font-family: 'Doto', monospace;
+  font-size: 1.05rem;
+  font-weight: 700;
   margin-bottom: 10px;
-  color: #00d2d3;
+  color: rgb(var(--ink));
 }
 
 .weaponStats {
   font-size: 0.85rem;
-  color: #6c757d;
+  color: var(--muted);
 }
 
 .weaponStats span {
@@ -240,15 +267,16 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 150px;
+  min-height: 130px;
+  margin-bottom: 15px;
 }
 
 .agentCard {
-  background: rgba(20, 20, 35, 0.7);
-  border-radius: 10px;
+  background: rgb(var(--grey-100));
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
   padding: 20px;
   text-align: center;
-  border: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -261,22 +289,23 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
+  background: rgb(var(--paper));
+  border-radius: var(--radius);
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgb(var(--grey-200));
 }
 
 .agentName {
+  font-family: 'Doto', monospace;
   font-size: 1.2rem;
-  font-weight: 600;
+  font-weight: 700;
   margin-bottom: 5px;
-  color: #00d2d3;
+  color: rgb(var(--ink));
 }
 
 .agentType {
   font-size: 0.9rem;
-  color: #a0a0c0;
+  color: var(--muted);
 }
 
 .skinsGrid {
@@ -286,18 +315,16 @@
 }
 
 .skinCard {
-  background: rgba(20, 20, 35, 0.7);
-  border-radius: 10px;
+  background: rgb(var(--paper));
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
   padding: 15px;
   text-align: center;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  transition: all 0.3s ease;
+  transition: border-color .2s;
 }
 
 .skinCard:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 5px 15px rgba(0, 168, 255, 0.3);
-  border-color: rgba(0, 168, 255, 0.3);
+  border-color: rgb(var(--ink));
 }
 
 .skinImage {
@@ -307,10 +334,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
+  background: rgb(var(--grey-100));
+  border-radius: var(--radius);
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgb(var(--grey-200));
 }
 
 .agentImageImg {
@@ -330,24 +357,25 @@
 .skinItemName {
   font-size: 0.85rem;
   font-weight: 600;
-  color: #e6e6e6;
+  color: rgb(var(--ink));
   margin-bottom: 3px;
 }
 
 .skinName {
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-family: 'Doto', monospace;
+  font-size: 0.95rem;
+  font-weight: 700;
   margin-bottom: 3px;
-  color: #00d2d3;
+  color: rgb(var(--ink));
 }
 
 .skinType {
   font-size: 0.8rem;
-  color: #a0a0c0;
+  color: var(--muted);
 }
 
 .vanilla {
-  color: #a0a0c0;
+  color: var(--muted);
   font-style: italic;
   font-weight: 400;
 }
@@ -360,7 +388,7 @@
 
 .customName {
   font-size: 0.75rem;
-  color: var(--ct, #00a8ff);
+  color: rgb(var(--ct));
   font-style: italic;
   margin-bottom: 3px;
 }
@@ -373,20 +401,20 @@
 
 .wearValue {
   font-size: 0.7rem;
-  color: #a0a0c0;
+  color: var(--muted);
   font-weight: 400;
 }
 
 .noData {
   text-align: center;
   padding: 20px;
-  color: #a0a0c0;
+  color: var(--muted);
 }
 
 .noPlayers {
   text-align: center;
   padding: 40px;
-  color: #a0a0c0;
+  color: var(--muted);
   font-size: 1.2rem;
 }
 
@@ -394,11 +422,12 @@
   text-align: center;
   padding: 40px;
   font-size: 1.2rem;
+  color: var(--muted);
 }
 
 .error {
   text-align: center;
   padding: 40px;
-  color: #ff6b6b;
+  color: rgb(var(--red));
   font-size: 1.2rem;
 }

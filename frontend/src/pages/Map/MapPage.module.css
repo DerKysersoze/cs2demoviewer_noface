@@ -1,0 +1,331 @@
+/* 2D Map page — layout + panels (extracted from the old Viewer tab styles,
+   extended with the weapon row and per-player performance stats). */
+
+.page { max-width: 1240px; margin: 0 auto; padding: 18px 20px 48px; }
+
+/* ── Match band under the header ── */
+.matchBand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  background: rgb(var(--paper));
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+}
+.teamName { font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+.teamScore { font-family: 'Doto', monospace; font-size: 1.7rem; font-weight: 900; line-height: 1; }
+.scoreSep { color: var(--muted); font-size: 1.2rem; font-weight: 300; }
+.ctColor { color: rgb(var(--ct)); }
+.tColor  { color: rgb(var(--t)); }
+.mapPill {
+  background: rgb(var(--grey-100));
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
+  padding: 4px 12px;
+  font-size: .78rem;
+  color: var(--muted);
+}
+.mapPill strong { color: rgb(var(--ink)); }
+
+.center { text-align: center; padding: 80px 20px; }
+.notFound { font-family: 'Doto', monospace; font-size: 2rem; font-weight: 900; margin-bottom: 10px; }
+
+/* ── Event Feed ── */
+.eventFeedBody {
+  overflow-y: auto;
+  height: 140px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+.eventFeedEmpty {
+  padding: 12px;
+  height: 140px;
+  font-size: .72rem;
+  color: var(--muted);
+  text-align: center;
+}
+.eventRow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: .72rem;
+  line-height: 1.4;
+  border-radius: var(--radius);
+  margin: 0 4px;
+}
+.eventRow:hover { background: rgb(var(--grey-100)); }
+.eventIcon { flex-shrink: 0; font-size: .8rem; line-height: 1; }
+.eventText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Event type colours */
+.event_kill   .eventText { color: rgb(var(--red)); }
+.event_hskill .eventText { color: #facc15; }
+.event_nade   .eventText { color: var(--muted); }
+.event_buy    .eventText { color: var(--muted); opacity: .75; }
+.event_plant  .eventText { color: rgb(var(--t)); font-weight: 700; }
+.event_defuse .eventText { color: rgb(var(--ct)); font-weight: 700; }
+
+/* ── Replay grid ── */
+.replayWrapper {
+  display: flex;
+  flex-direction: column;
+  width: fit-content;
+  margin: 0 auto;
+}
+
+.replayLayout {
+  display: grid;
+  /* middle column sized so [floor row + square canvas + playback bar] ≈ side panel height */
+  grid-template-columns: 300px minmax(0, calc(100vh - 420px)) 220px;
+  align-items: stretch;
+  transition: grid-template-columns .2s ease;
+}
+.replayLayout:has(.replayFeedCollapsed) {
+  grid-template-columns: 300px minmax(0, calc(100vh - 420px)) 32px;
+}
+
+.replayLeftPanel {
+  background: rgb(var(--paper));
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius) 0 0 var(--radius);
+  border-right: none;
+  padding: 12px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow-y: auto;
+  max-height: calc(100vh - 320px);
+}
+
+.replayTeamHeader {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  padding: 4px 2px 5px;
+  border-bottom: 1px solid;
+  margin-bottom: 5px;
+}
+
+.replayPlayerRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 4px;
+  cursor: pointer;
+  border-radius: var(--radius);
+  transition: background .12s;
+  margin-bottom: 1px;
+}
+.replayPlayerRow:hover { background: rgb(var(--grey-100)); }
+.playerRowHidden { opacity: 0.28; }
+
+.replayPlayerTop {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.replayHp {
+  font-size: .72rem;
+  font-weight: 700;
+  color: rgb(var(--ink));
+  min-width: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.playerDead { color: rgb(var(--grey-400)) !important; text-decoration: line-through; }
+.playerDot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.replayName {
+  flex: 1;
+  font-size: .72rem;
+  color: rgb(var(--ink));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Weapon row — live from the current frame, "—" while unknown */
+.weaponRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 29px;
+  min-height: 15px;
+}
+.weaponIcon { font-size: .68rem; line-height: 1; flex-shrink: 0; }
+.weaponName {
+  font-size: .64rem;
+  font-weight: 600;
+  color: rgb(var(--ink));
+  opacity: .78;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.weaponNameUnknown { color: var(--muted); font-weight: 400; font-style: italic; opacity: .6; }
+
+.barTrack {
+  height: 4px;
+  background: rgb(var(--grey-200));
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.barFill {
+  height: 100%;
+  border-radius: var(--radius);
+  transition: width 0.1s ease, opacity 0.2s ease;
+}
+
+/* Bottom row: K/A/D · DMG · HS% on the left, armor icons on the right */
+.replayPlayerBot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 29px;
+  margin-top: 1px;
+  gap: 6px;
+}
+.replayStats {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: .6rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.replayStats .statSep { opacity: .5; }
+.replayStats .statVal { color: rgb(var(--ink)); font-weight: 700; font-size: .62rem; }
+.replayArmor {
+  font-size: .62rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.replayPanelFooter {
+  margin-top: auto;
+  padding: 10px 4px 4px;
+  border-top: 1px solid rgb(var(--grey-200));
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.replayRoundLabel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.replayTimer {
+  font-family: 'Doto', monospace;
+  font-size: 1.6rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: rgb(var(--ink));
+  line-height: 1;
+}
+
+/* ── Right feed panel ── */
+.replayFeedPanel {
+  background: rgb(var(--paper));
+  border: 1px solid rgb(var(--grey-200));
+  border-left: none;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: calc(100vh - 320px);
+}
+.replayFeedHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 10px;
+  background: rgb(var(--grey-100));
+  border-bottom: 1px solid rgb(var(--grey-200));
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+.replayFeedHeader:hover { background: rgb(var(--grey-200)); }
+.replayFeedTitle {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgb(var(--ink));
+  white-space: nowrap;
+  overflow: hidden;
+}
+.replayFeedToggle {
+  font-size: .9rem;
+  color: var(--muted);
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+.replayFeedCollapsed .replayFeedTitle { display: none; }
+.replayFeedCollapsed .replayFeedToggle { margin-left: 0; }
+.replayFeedCollapsed .replayFeedHeader {
+  justify-content: center;
+  padding: 7px 4px;
+}
+.replayFeedPanel .eventFeedBody {
+  flex: 1;
+  overflow-y: auto;
+  height: unset;
+  min-height: 0;
+}
+.replayFeedPanel .eventFeedEmpty {
+  height: unset;
+  padding: 16px 10px;
+}
+.replayFeedPanel .eventRow {
+  font-size: .68rem;
+}
+
+/* ── Bottom bar ── */
+.replayBottomBar {
+  background: rgb(var(--paper));
+  border: 1px solid rgb(var(--grey-200));
+  border-top: none;
+  border-radius: 0 0 var(--radius) var(--radius);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.replayRoundPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.replayRoundPill {
+  background: rgb(var(--grey-100));
+  border: 1px solid rgb(var(--grey-200));
+  color: var(--muted);
+  border-radius: var(--radius);
+  padding: 3px 7px;
+  font-size: .72rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+  min-width: 28px;
+  text-align: center;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.replayRoundPill:hover:not(:disabled) {
+  color: rgb(var(--ink));
+  border-color: rgb(var(--ink));
+}
+.replayRoundPillActive {
+  background: rgb(var(--ct)) !important;
+  color: #06263a !important;
+  border-color: rgb(var(--ct)) !important;
+}
+.replayRoundPill:disabled { opacity: 0.4; cursor: default; }

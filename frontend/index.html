@@ -4,7 +4,30 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>CS2 Demo Viewer — round by round</title>
+    <meta
+      name="description"
+      content="Parse Counter-Strike 2 demo files and review matches: scoreboard, timeline, 2D replay, aim and loadout breakdowns."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Doto:wght@400;600;700;900&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- Set the theme class before first paint to avoid a flash of the wrong theme. -->
+    <script>
+      ;(function () {
+        try {
+          var stored = localStorage.getItem('cs2-theme')
+          var dark =
+            stored === 'dark' ||
+            ((stored !== 'light') &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches)
+          if (dark) document.documentElement.classList.add('dark')
+        } catch (e) {}
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
