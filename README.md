@@ -3,15 +3,15 @@
 A local web app for parsing and visualising Counter-Strike 2 `.dem` files.
 Upload a demo and review the match: results page, multi-floor 2D replay, aim stats, and player loadouts — all in your browser, no account, no cloud.
 
+The UI ships with **light and dark themes** (follows your system setting, toggle in the header). Screenshots below show the dark theme — click any thumbnail to open the full-size image.
+
 ---
 
 ## Features
 
 ### Match Results
 
-![Match Results — Overview tab](screenshots/results.png)
-
-![Match Results — Overview tab, dark mode](screenshots/results-dark.png)
+[<img src="screenshots/results-dark.png" alt="Match Results — Overview tab" width="440" />](screenshots/results-dark.png)
 
 A full match review for each demo, organised as **four tabs** under the match header (sticky tab bar with a **Loadout →** CTA at its right end; ←/→ still steps through rounds on any tab):
 
@@ -21,24 +21,18 @@ A full match review for each demo, organised as **four tabs** under the match he
 - **Aim tab** — the full aim breakdown inline: player switcher, summary stats (hits, damage, avg dmg/hit, HS-hit %, KAST, shots, accuracy), hit-location bars and the per-weapon table — no page hop needed
 - **Players tab** — a CT/T team rail (sorted by kills, K/D · DMG · HS% at a glance) that doubles as navigation; the dossier shows a player's match stats, aim summary, hit-location breakdown and per-weapon table in one place, with a **TOP PERFORMER** badge on the match's best player (the default selection)
 
-![Match Results — Players tab](screenshots/results-players.png)
-
-![Match Results — Players tab, dark mode](screenshots/results-players-dark.png)
+[<img src="screenshots/results-players-dark.png" alt="Match Results — Players tab" width="440" />](screenshots/results-players-dark.png)
 
 - **Steam profile links** — every player name (stats table, kill feed, highlights, the Players dossier) links to that player's [Steam community profile](https://steamcommunity.com) in a new tab, resolved from the demo's SteamID64s (a small “open steam profile” hint fades in on hover)
 - **Header / tab-bar CTAs** — the header carries **Home only**; **Loadout** now sits at the right end of the sticky tab bar (the aim breakdown lives in the Aim tab; the `/aim/<id>` page is kept for share links); the 2D map is always visible on the Rounds tab — replay the round in place, or use its **Open fullscreen map** CTA to open the full map page deep-linked to that round
 
-![Results — Rounds tab, 2D map as main content](screenshots/results-rounds.png)
-
-![Results — Rounds tab, 2D map as main content, dark mode](screenshots/results-rounds-dark.png)
+[<img src="screenshots/results-rounds-dark.png" alt="Results — Rounds tab, 2D map as main content" width="440" />](screenshots/results-rounds-dark.png)
 
 - **2D map as the tab's main content** — the companion is always on (nothing to expand): its head carries the round label, the floor badge, the per-floor player distribution for the whole round and the **Open fullscreen map** CTA (opens the dedicated map page deep-linked to the current round), and its body is the full replay stage filling the column. The map is static, center-anchored — zoom (1×–4×) without the image drifting, and the page scrolls normally over it. The round story sits as a compact rail on the left; the old VIDEO SYNC card (demo_play command + jump grid) is gone — chips and ←/→ handle round selection.
 
 ### 2D Map Replay
 
-![2D Replay](screenshots/2d-replay.png)
-
-![2D Replay — dark mode](screenshots/map-dark.png)
+[<img src="screenshots/map-dark.png" alt="2D Map Replay" width="440" />](screenshots/map-dark.png)
 
 A dedicated page (`/map/<demoId>`) for stepping through any round on an accurate radar overlay — with live player details right alongside:
 
@@ -54,7 +48,7 @@ A dedicated page (`/map/<demoId>`) for stepping through any round on an accurate
 
 ### Aim Breakdown
 
-![Aim Breakdown](screenshots/aim-breakdown.png)
+[<img src="screenshots/aim-breakdown-dark.png" alt="Aim Breakdown" width="440" />](screenshots/aim-breakdown-dark.png)
 
 A dedicated page (`/aim/<demoId>`) to deep-dive into any player's shooting performance for the match:
 
@@ -66,7 +60,7 @@ A dedicated page (`/aim/<demoId>`) to deep-dive into any player's shooting perfo
 
 ### Loadout
 
-![Loadout](screenshots/loadout.png)
+[<img src="screenshots/loadout-dark.png" alt="Loadout" width="440" />](screenshots/loadout-dark.png)
 
 Browse every player's cosmetics as equipped during the match — **both sides, side by side**:
 
@@ -79,7 +73,7 @@ Loadouts are rebuilt from the demo's **purchase stream** — `item_pickup` event
 
 ### Upload & Library
 
-![Upload](screenshots/upload.png)
+[<img src="screenshots/upload-dark.png" alt="Upload & Library" width="440" />](screenshots/upload-dark.png)
 
 - **Upload strip** — drop `.dem` files on it (or pick via **Choose files**); up to **512 MB** per file. A single file opens its Results page instantly; multiple files are queued
 - **Queue** — multiple files are queued; each shows upload progress and a "Parsing…" state while the server works
@@ -98,7 +92,7 @@ Loadouts are rebuilt from the demo's **purchase stream** — `item_pickup` event
 | Frontend | React 19 + Vite |
 | Map rendering | HTML5 Canvas |
 
-The UI ships with a light "paper & ink" theme that follows your system setting (with a dark toggle in the header).
+The UI ships with a "paper & ink" theme in **light and dark modes** — it follows your system setting, with a toggle in the header.
 
 ---
 
