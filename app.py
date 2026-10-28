@@ -2492,13 +2492,15 @@ def parse_demo(dem_path: str, session_id: str = None) -> dict:
     demo.parse()
 
     # ---- Header ----
+    # NOTE: the demo header also carries connection info (client_name /
+    # server_name).  We deliberately never expose it: it is omitted from the
+    # app-facing payload (this feeds the /api/jobs/<id> and /reparse
+    # responses), is not persisted to the DB, and is not logged.
     h = demo.header or {}
     header = {
         "map":      _safe(h.get("map_name"), "unknown"),
         "tickrate": _safe(h.get("tick_rate"), "?"),
         "ticks":    _safe(h.get("ticks_played"), "?"),
-        "client":   _safe(h.get("client_name"), "?"),
-        "server":   _safe(h.get("server_name"), "?"),
         "duration": _duration(h),
     }
 
@@ -2785,6 +2787,77 @@ def api_jobs_status(job_id):
     return jsonify(snapshot)
 
 
+def extract_bomb_sites(ticks_by_round: dict, events_by_round: dict) -> dict:
+    """
+    Derive the bomb's planted position per round from EXISTING data — no
+    extra demoparser2 pass.  The plant event (type "plant") already carries
+    the plant tick + planter name; the planter's position at that tick is
+    interpolated between the two sampled tick frames bracketing the plant
+    (frames are sampled every 8 ticks and the planter is stationary during
+    the ~1.5s plant animation, so error is < 1 world unit in practice).
+
+    Returns {round_num: {"x", "y", "z", "plant_tick", "defuse_tick"}} for
+    rounds where the plant position could be resolved.  Rounds without a
+    plant are absent.  The bomb stays at this position until defused or the
+    round ends (C4 does not move once planted).
+    """
+    ticks_by_round  = ticks_by_round or {}
+    events_by_round = events_by_round or {}
+    result = {}
+    for rn, evts in events_by_round.items():
+        plant = next((e for e in evts if e.get("type") == "plant"), None)
+        if not plant or "tick" not in plant or not plant.get("player"):
+            continue
+        # Session dicts use int keys in both the fresh-parse and DB-load paths,
+        # but be tolerant of str keys from raw blobs.
+        frames = ticks_by_round.get(rn)
+        if frames is None:
+            try:
+                frames = ticks_by_round.get(int(rn))
+            except (TypeError, ValueError):
+                pass
+        if frames is None:
+            try:
+                frames = ticks_by_round.get(str(rn))
+            except (TypeError, ValueError):
+                pass
+        if not frames:
+            continue
+
+        tick = int(plant["tick"])
+        name = str(plant["player"])
+
+        # Frames are ascending in tick order — find the first frame >= tick.
+        idx = next((i for i, f in enumerate(frames) if f["t"] >= tick), None)
+        if idx is None:
+            idx = len(frames) - 1
+        candidates = (idx - 1, idx) if idx > 0 else (idx, idx + 1)
+        pos = None
+        for ci in candidates:
+            if ci < 0 or ci >= len(frames):
+                continue
+            for pl in frames[ci]["p"]:
+                if pl["n"] == name and pl.get("x") is not None and pl.get("y") is not None:
+                    pos = (pl["x"], pl["y"], pl.get("z"))
+                    break
+            if pos:
+                break
+        if not pos:
+            log.debug("extract_bomb_sites: no carrier position for %r around tick %s (round %s)",
+                      name, tick, rn)
+            continue
+
+        defuse = next((e for e in evts if e.get("type") == "defuse" and e.get("tick")), None)
+        result[int(rn)] = {
+            "x":            float(pos[0]),
+            "y":            float(pos[1]),
+            "z":            (None if pos[2] is None else float(pos[2])),
+            "plant_tick":   tick,
+            "defuse_tick":  int(defuse["tick"]) if defuse else None,
+        }
+    return result
+
+
 @app.route("/api/ticks/<session_id>/<int:round_num>")
 def api_ticks(session_id, round_num):
     session = _session_cache.get(session_id)
@@ -2805,7 +2878,12 @@ def api_ticks(session_id, round_num):
         )
         session["shots"] = extract_shots(dem_path, session["ticks"]) if dem_path else {}
     shots = session["shots"].get(round_num, [])
-    return jsonify({"frames": frames, "count": len(frames), "grenades": grenades, "events": events, "shots": shots})
+    # Bomb planted site — derived from ticks + plant events (no extra parser
+    # pass, works for old sessions too).  Cached on the session dict.
+    if "bomb" not in session:
+        session["bomb"] = extract_bomb_sites(session.get("ticks", {}), session.get("events", {}))
+    bomb = session["bomb"].get(round_num)
+    return jsonify({"frames": frames, "count": len(frames), "grenades": grenades, "events": events, "shots": shots, "bomb": bomb})
 
 
 @app.route("/api/map_info/<map_name>")

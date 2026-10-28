@@ -88,6 +88,7 @@ export default function deriveHighlights({ rounds = [], kills = [], scoreboard =
           player: { ...playerFor(name), in: 'detail' },
           round:  r.round_num,
           timeSec: tSec(r.round_num, bestAt),
+          count:  bestN, // kills inside the window (UI shorthand: double/triple/…)
         })
       } else if (ks.length >= 3) {
         // 3+ kills, none within 3 s of each other — a sustained pick-off
@@ -98,6 +99,7 @@ export default function deriveHighlights({ rounds = [], kills = [], scoreboard =
           player: { ...playerFor(name), in: 'title' },
           round:  r.round_num,
           timeSec: tSec(r.round_num, sorted[0].tick),
+          count:  ks.length, // kills in the round (UI shorthand: 3-kill run)
         })
       }
 
@@ -112,6 +114,7 @@ export default function deriveHighlights({ rounds = [], kills = [], scoreboard =
             player: { ...playerFor(name), in: 'detail' },
             round:  r.round_num,
             timeSec: tSec(r.round_num, roundLast.tick),
+            count:  ks.length, // kills in the round (UI shorthand: 4K)
           })
         }
       }
@@ -126,6 +129,7 @@ export default function deriveHighlights({ rounds = [], kills = [], scoreboard =
         detail: `round ${r.round_num}`,
         round:  r.round_num,
         timeSec: endSec,
+        winner: 'T', // the round went to T (UI shorthand: “T took it”)
       })
     }
     if (r.reason === 'Bomb Defused') {
@@ -135,6 +139,7 @@ export default function deriveHighlights({ rounds = [], kills = [], scoreboard =
         detail: `round ${r.round_num}`,
         round:  r.round_num,
         timeSec: endSec,
+        winner: 'CT', // the round went to CT (UI shorthand: “CT took it”)
       })
     }
   }

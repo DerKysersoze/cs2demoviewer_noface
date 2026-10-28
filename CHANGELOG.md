@@ -3,6 +3,55 @@
 All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.3.1] - 2026-10-28
+
+### Changed
+
+- **Overview-tab player names jump to the Players tab** — clicking a player name anywhere in the Overview tab (full-match stats table rows, the Team-at-a-glance MVP footers, and Moments entries) no longer opens their Steam profile; it switches to the Players tab and opens that player's dossier with the rail highlighting them. Names render as text-style jump buttons with the existing hover-underline affordance; the stats table and MVP footer show a floating "players →" hint pill (reusing the `.steam-hint` styling, whose hover rule now also triggers on `<button>`, not just anchors) while the Moments name uses a native `title` tooltip — that cell is ellipsised (`overflow: hidden`), which would clip the pill. The rest of a Moments row still selects the round and jumps to the Rounds tab (the name click stops propagation). `PlayerDossier` selection is now owned by `Results.jsx` (`dossierName` state + `jumpToPlayer`, mirroring the existing `jumpToRound` pattern), exposed to the dossier as `selectedName`/`onSelect` (it keeps an internal selection fallback when the props are absent). Steam-profile links are preserved everywhere else — Rounds-tab kill feed, the dossier head name, Loadout, and every `PlayerLink` outside the Overview tab.
+
+### Testing
+
+- Frontend lint clean (only the pre-existing `MapReplayStage.jsx:140` unused-var error remains) and `npm run build` clean; live-verified on the reference demo (de_nuke, 13–6) — stats-table name, MVP footer and Moments name all land on the Players tab with the clicked player's dossier active, other tabs' Steam links untouched.
+
+## [2.3.0] - 2026-10-27
+
+Overview tab redesign (approved mockup at `mockups/overview_v2_mockup.html`): the flat stats table + highlights grid is now four blocks you read top to bottom — **Team at a glance** (CT vs T cards: rounds won, total DMG, team HS%, KAST, team MVP, winner marked), **Match flow** (one segment per round — solid = CT, outlined = T, end-reason icons, half break marked, click to jump to the round), an **upgraded full-match table** (MVP badge, ADR and KAST columns, DMG bars scaled to the match max, best-of-match dots per column, green/red K/D, team totals rows), and **Moments** (highlights grouped by type with counts instead of a flat grid). Everything is derived from the already-loaded `/results` payload — no backend or parser changes.
+
+### Added
+
+- **Team at a glance** — new `TeamCompare.jsx`: one card per side with rounds won, total damage, team HS% (estimated as Σ round(kills·HS%) / Σ kills, since the payload stores the rounded per-player percentage) and team KAST (members' average), plus the team's MVP (best player of the side, linked to their Steam profile). The winning side's card is marked — it flips correctly when a T wins.
+- **Match flow strip** — new `FlowStrip.jsx`: one segment per round (solid = CT win, outlined = T win), each carrying the round's end-reason icon (from `format.js`'s `reasonIcon`), with a gap marking the half break (the first round where a team reaches 8, or round 12 — whichever comes first). Clicking a segment selects that round **and switches to the Rounds tab** (same `jumpToRound` path as highlights).
+- **Upgraded full-match table** — `MatchStats.jsx` rewritten: the table is grouped into CT / T sections (sorting applies within each team); an **MVP** badge on the match's best player (kills desc, then K/D desc — the same rule as the Players tab's TOP PERFORMER); an **ADR** column (average damage per round = total DMG ÷ rounds played; sortable — no best-dot, since it ranks identically to DMG); a **KAST** column from the aim breakdown; DMG now carries an inline bar scaled to the match maximum so magnitude is visible at a glance; a ● best-of-match dot on the top value of each column (K, K/D, KAST, DMG, HS%); K/D coloured per the existing `kd-good` (≥ 1) / `kd-bad` (< 1) convention; and a team totals row under each team block (Σ K/D/A, team K/D, team KAST, Σ DMG, team HS%).
+- **Grouped Moments** — `Highlights.jsx` rewritten: highlights are grouped by type with counts (Clutch ×6 · Multi-kills ×13 · Kill streaks ×3 · Bomb & defuse ×1 on the reference demo) instead of one undifferentiated grid; the click-to-Rounds behaviour is unchanged.
+- **`deriveOverview.js`** — new pure module computing every Overview aggregate (team stats, round flow + half split, MVP, total rounds for ADR, KAST map, best-per-column) from the existing payload; consumed by `Results.jsx` through a single `useMemo`.
+- **`deriveHighlights.js`** — multi-kill / kill-streak / clutch items now carry a `count` (kills in the chain), and bomb / defuse items carry a `winner`, so Moments can read “2 kills” / “CT defused” without re-deriving.
+- **Global `td.l` / `th.l`** — left-align pair for the existing `td.r, th.r` convention in `index.css` (the upgraded table's PLAYER column uses `className="l"`).
+
+### Changed
+
+- **Team at a glance footer** — the cards' “main weapons” row is replaced by the team's MVP (best player of the side: kills desc, then K/D desc — the same rule as the MVP badge), linked to their Steam profile; the now-unused top-2 team-weapon aggregation and `.tcardWpn` style are dropped.
+- **Overview tab composition** — the tab is now the four blocks above (glance → flow → stats → moments); the old flat table + highlights grid presentation is gone. Rounds, Aim and Players tabs and all other pages are unchanged.
+- **README + dark screenshot** — the Overview bullet reflects the new layout; `screenshots/results-dark.png` re-shot (1440×2600) to the four-block page.
+
+### Removed
+
+- **MAIN column** — the per-player most-frequent kill-weapon column is dropped from the full-match stats table in favour of ADR (a label, not a value — per-weapon data stays on the Aim tab).
+- **Unused highlight styles** — the old `hGrid` / `hItem` / `hIcon` / `hText` / `hTitle` / `hDetail` rules in `Results.module.css` lingered from the flat highlights grid; the Moments block uses the new `moments*` / `m*` classes, so the dead styles are stripped (no component referenced them).
+- **Flat highlights grid** — the single undifferentiated row of highlight chips is replaced by the grouped Moments blocks (same data; presentation only).
+- **“Top damage” highlight entries** — redundant with the table's DMG column (bar + best dot) and the glance cards' team DMG; no longer shown in Moments.
+- **Demo connection info** — the parse/reparse API payload carried the demo's client and server names (`header.client` / `header.server` — the match's connection info); `parse_demo()` no longer emits them, which covers both the `/api/jobs/<id>` job response and the `/api/demos/<id>/reparse` response. They were never persisted to the DB, logged, or rendered in the UI — so the connection info is not visible anywhere in the app. Guarded by a regression test in `tests/test_ticks_equivalence.py`.
+
+### Fixed
+
+- **Steam-link hover hint in narrow cards** — the “open steam profile” hint was inline in the link, so hovering a player name in the Rounds-tab kill feed expanded the row's content (reflow) and the hint text overran the rail card; it is now a compact “steam ↗” pill that floats above the name (`.steam-hint` in `index.css`, `PlayerLink` anchor carries `steam-link` for the positioning context) — no layout shift, and it stays inside the card. Applied everywhere `PlayerLink` is used (stats table, kill feed, Moments, MVP footer, dossier).
+
+### Testing
+
+- **52/52 tests pass** in ~31 s; frontend build clean.
+- Lint: only the pre-existing `MapReplayStage.jsx:140` unused-`isDragging` error remains — untouched by this change.
+- Live-verified on the reference demo (de_nuke, 13–6 CT, 19 rounds, 10 players) and a T-win demo (7–15), in light and dark themes: winner badge on the correct card in both, flow-strip segments / half break (R12 at 6–6) / reason icons correct, MVP badge S Kanon (21K · 2530 DMG), best KAST Keyser Soze 84%, Moments counts 6 / 13 / 3 / 1, zero page errors.
+- Steam-hint fix verified on the reference demo's Rounds tab (worst case: rightmost name in a wrapped kill-feed row), light and dark: the pill renders above the name, measured inside the rail card (card x 194–398, pill x 332–392), no row reflow on hover.
+
 ## [2.2.0] - 2026-10-26
 
 Front page redesign (mockup option A): the plain “Previous Demos” text list is now a match-library card grid, and the big centered drop zone is a slim upload strip above it. The Results page is reorganised into four tabs — Overview · Rounds · Aim · Players — with the aim breakdown inline and a new per-player dossier (mockup option A + the “player dossier” layout). And the Loadout page now shows **both sides at once**: each player's CT and T loadouts side by side, rebuilt from the demo's purchase stream instead of a single end-of-match snapshot. The Rounds tab is reworked around the 2D map — it is now the tab's main content (always-on companion, ~80/20 split with the kill feed as a compact left rail), and the VIDEO SYNC jump card is removed.

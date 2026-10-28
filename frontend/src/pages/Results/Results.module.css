@@ -414,80 +414,6 @@
   color: rgb(var(--grey-600));
 }
 
-/* ── Highlights ───────────────────────────────────────────────────────────── */
-
-.hGrid {
-  list-style: none;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
-}
-
-@media (min-width: 1024px) {
-  .hGrid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-.hItem {
-  display: flex;
-  width: 100%;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  background: none;
-  border: 1px solid rgb(var(--grey-200));
-  border-radius: var(--radius);
-  text-align: left;
-  transition: border-color .12s;
-}
-
-/* Cards are divs (they embed Steam profile links, which a <button> may not
-   contain); give the clickable ones a pointer cursor — .hItemDisabled
-   already sets cursor: default. */
-.hItem[role='button'] {
-  cursor: pointer;
-}
-.hItem[role='button']:focus-visible {
-  outline: 2px solid rgb(var(--ink));
-  outline-offset: 2px;
-}
-
-.hItem:hover {
-  border-color: rgb(var(--ink));
-}
-
-.hItemDisabled {
-  opacity: 0.65;
-  cursor: default;
-}
-
-.hItemDisabled:hover {
-  border-color: rgb(var(--grey-200));
-}
-
-.hIcon {
-  font-size: 16px;
-  line-height: 1.2;
-}
-
-.hText {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.hTitle {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.hDetail {
-  margin-top: 2px;
-  font-size: 11px;
-  color: rgb(var(--grey-600));
-}
-
 /* ── RoundMap companion — "this round on the 2D map" (option C, always on) ── */
 
 .companion {
@@ -773,6 +699,373 @@
   text-align: right;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+/* ── Overview · team at a glance ──────────────────────────────────────────── */
+
+.glance {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 700px) {
+  .glance {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tcard {
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
+  background: rgb(var(--paper));
+  padding: 16px 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tcardWinner {
+  border: 2px solid rgb(var(--ink));
+}
+
+.tcardHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.tchipSwatch {
+  width: 9px;
+  height: 9px;
+}
+
+.glanceBadge {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: rgb(var(--ink));
+  color: rgb(var(--paper));
+  padding: 3px 8px;
+  border-radius: var(--radius);
+}
+
+.tcardStats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+@media (max-width: 480px) {
+  .tcardStats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.tcardStats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tsVal {
+  font-family: 'Doto', monospace;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.tsLbl {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgb(var(--grey-600));
+}
+
+.tcardFoot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid rgb(var(--grey-200));
+  padding-top: 10px;
+}
+
+/* ── Overview · match flow strip ──────────────────────────────────────────── */
+
+.flow {
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+  padding-top: 18px; /* room for the HALF label above its marker */
+}
+
+.flowCell {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Vertical line + label between the two MR12 halves */
+.halfMark {
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 28px;
+  background: rgb(var(--grey-400));
+  z-index: 1;
+}
+
+.halfMark::after {
+  content: 'HALF';
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: rgb(var(--grey-600));
+  white-space: nowrap;
+}
+
+.seg {
+  flex: 1;
+  min-width: 24px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: 0;
+  background: rgb(var(--paper));
+  color: rgb(var(--ink));
+  cursor: pointer;
+  transition: transform .08s ease, background .08s ease;
+}
+
+.seg:hover {
+  transform: translateY(-2px);
+  background: rgb(var(--grey-100));
+}
+
+.seg:focus-visible {
+  outline: 2px solid rgb(var(--ink));
+  outline-offset: 2px;
+}
+
+.segCt {
+  background: rgb(var(--ink));
+  color: rgb(var(--paper));
+  border-color: rgb(var(--ink));
+}
+
+.segT {
+  background: rgb(var(--paper));
+  color: rgb(var(--ink));
+  border: 2px solid rgb(var(--ink));
+}
+
+.flowLegend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
+  font-size: 11.5px;
+  color: rgb(var(--grey-600));
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legendSw {
+  width: 12px;
+  height: 12px;
+}
+
+/* ── Overview · scoreboard upgrades (MVP · best-of-match · DMG bars · totals) ── */
+
+.mvpTag {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: rgb(var(--ink));
+  color: rgb(var(--paper));
+  padding: 2.5px 6px;
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+
+/* ● best-of-match marker (rendered before the value it belongs to) */
+.bestdot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgb(var(--ink));
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+
+.bestVal {
+  font-weight: 800;
+}
+
+.cellMuted {
+  color: rgb(var(--grey-400));
+}
+
+/* DMG value with an inline bar scaled to the match maximum */
+.dmgCell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 84px;
+}
+
+.dmgBar {
+  position: relative;
+  width: 84px;
+  height: 3px;
+  background: rgb(var(--grey-200));
+  overflow: hidden;
+}
+
+.dmgBar i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: block;
+  background: rgb(var(--ink));
+}
+
+.totalsRow td {
+  background: rgb(var(--grey-100));
+  border-top: 1px solid rgb(var(--grey-200));
+  font-weight: 700;
+}
+
+/* ── Overview · moments (highlights grouped by type) ──────────────────────── */
+
+.moments {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+@media (max-width: 980px) {
+  .moments {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .moments {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mgroup {
+  border: 1px solid rgb(var(--grey-200));
+  border-radius: var(--radius);
+  background: rgb(var(--paper));
+  padding: 12px 14px 10px;
+}
+
+.mgroupHead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mcount {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgb(var(--grey-600));
+  background: rgb(var(--grey-100));
+  padding: 2px 7px;
+  border-radius: 9px;
+}
+
+.mlist {
+  list-style: none;
+}
+
+.mitem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  margin: 0 -6px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.mitem:hover {
+  background: rgb(var(--grey-100));
+}
+
+.mitem:focus-visible {
+  outline: 2px solid rgb(var(--ink));
+  outline-offset: 1px;
+}
+
+.mname {
+  font-size: 12.5px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mlabel {
+  font-size: 11px;
+  color: rgb(var(--grey-600));
+  white-space: nowrap;
+}
+
+.mround {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: 'Doto', monospace;
+  font-size: 11px;
+  color: rgb(var(--grey-600));
+}
+
+.mitem:hover .mround {
+  color: rgb(var(--ink));
 }
 
 /* ── Danger zone ──────────────────────────────────────────────────────────── */

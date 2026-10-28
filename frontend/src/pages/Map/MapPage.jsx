@@ -9,6 +9,7 @@ import { demosApi } from '../../api/demos'
 import { ticksApi } from '../../api/ticks'
 import MapReplayStage from '../../components/MapReplayStage'
 import { PLAYER_COLORS } from '../../components/playerColors'
+import { bombSitesFor } from '../../data/mapSites'
 import styles from './MapPage.module.css'
 
 function formatTime(secs) {
@@ -20,16 +21,22 @@ function formatTime(secs) {
 
 // ── Per-player row in the left panel ────────────────────────────
 // Health + live weapon (from the current frame) + K/A/D · DMG · HS% + armor.
+// Click = select + follow on the map.  Eye icon = hide/show on the map.
 function PlayerRow({ name, hp, armor, helmet, alive, weapon, color, hasFrames,
-                     hidden, onToggle, kills, assists, deaths, dmg, hsPct }) {
+                     hidden, onToggle, selected, onSelect, kills, assists, deaths, dmg, hsPct }) {
   const dead  = hasFrames && (!alive || hp === 0)
   const hpVal = dead ? 0 : hp
 
   return (
     <div
-      className={[styles.replayPlayerRow, hidden ? styles.playerRowHidden : ''].join(' ')}
-      onClick={onToggle}
-      title={hidden ? `${name} — hidden (click to show)` : `${name} — click to hide`}
+      className={[
+        styles.replayPlayerRow,
+        hidden ? styles.playerRowHidden : '',
+        selected ? styles.playerRowSelected : '',
+      ].join(' ')}
+      onClick={() => onSelect(selected ? null : name)}
+      title={`${name} — click to ${selected ? 'stop following' : 'follow on map'}`}
+      style={selected ? { borderLeftColor: color } : undefined}
     >
       <div className={styles.replayPlayerTop}>
         <span className={`${styles.replayHp}${dead ? ' ' + styles.playerDead : ''}`}>
@@ -37,6 +44,15 @@ function PlayerRow({ name, hp, armor, helmet, alive, weapon, color, hasFrames,
         </span>
         <span className={styles.playerDot} style={{ background: color }} />
         <span className={`${styles.replayName}${dead ? ' ' + styles.playerDead : ''}`}>{name}</span>
+        <button
+          type="button"
+          className={styles.eyeBtn}
+          title={hidden ? 'Show on map' : 'Hide on map'}
+          onClick={(e) => { e.stopPropagation(); onToggle() }}
+          aria-label={hidden ? `Show ${name} on map` : `Hide ${name} on map`}
+        >
+          {hidden ? '🚫' : '👁'}
+        </button>
       </div>
 
       <div className={styles.weaponRow}>
@@ -70,7 +86,8 @@ function PlayerRow({ name, hp, armor, helmet, alive, weapon, color, hasFrames,
   )
 }
 
-function PlayerPanel({ frames, frame, scoreboard, playerColorMap, hiddenPlayers, togglePlayer, selectedRound, elapsed }) {
+function PlayerPanel({ frames, frame, scoreboard, playerColorMap, hiddenPlayers, togglePlayer,
+                      selectedPlayer, onSelectPlayer, selectedRound, elapsed, onCollapse }) {
   const hasFrames = frames.length > 0
   const current   = frames[frame]
 
@@ -101,6 +118,8 @@ function PlayerPanel({ frames, frame, scoreboard, playerColorMap, hiddenPlayers,
         hasFrames={hasFrames}
         hidden={hiddenPlayers.has(p.name)}
         onToggle={() => togglePlayer(p.name)}
+        selected={selectedPlayer === p.name}
+        onSelect={onSelectPlayer}
         kills={p.kills ?? 0}
         assists={p.assists ?? 0}
         deaths={p.deaths ?? 0}
@@ -129,6 +148,78 @@ function PlayerPanel({ frames, frame, scoreboard, playerColorMap, hiddenPlayers,
         <span className={styles.replayTimer}>
           {hasFrames ? formatTime(elapsed) : '—:——'}
         </span>
+        <button
+          type="button"
+          className={styles.collapseBtn}
+          onClick={onCollapse}
+          title="Collapse player panel"
+          aria-label="Collapse player panel"
+        >
+          ‹
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Help panel (? button, top-right of the map area) ──────────────────
+// Features + player-panel legend + keyboard shortcuts, plus map-specific
+// facts (bomb sites from the static table, floors from /api/map_info).
+function HelpPanel({ mapName, floors, onClose }) {
+  const sites = bombSitesFor(mapName)
+  return (
+    <div className={styles.helpPanel} role="dialog" aria-label="Map replay help">
+      <div className={styles.helpHead}>
+        <span className={styles.helpTitle}>Map replay help</span>
+        <button type="button" className={styles.helpClose} onClick={onClose} aria-label="Close help">✕</button>
+      </div>
+
+      <div className={styles.helpSec}>
+        <div className={styles.helpSecTitle}>This map</div>
+        <div className={styles.helpRow}><span className={styles.helpK}>Map</span><span>{mapName}</span></div>
+        {sites && (
+          <div className={styles.helpRow}>
+            <span className={styles.helpK}>Bomb sites</span><span>{sites.join(' · ')}</span>
+          </div>
+        )}
+        {floors.length > 1 && (
+          <div className={styles.helpRow}>
+            <span className={styles.helpK}>Floors</span><span>{floors.map(f => f.label).join(' · ')}</span>
+          </div>
+        )}
+      </div>
+
+      <div className={styles.helpSec}>
+        <div className={styles.helpSecTitle}>Features</div>
+        <ul className={styles.helpList}>
+          <li><b>🎯 Follow</b> — click a player dot or list row; the camera tracks them and auto-switches floors. Release with Esc, ✕, or clicking the row again.</li>
+          <li><b>👆 Hover</b> a dot for live name / HP / weapon.</li>
+          <li><b>💣 Bomb</b> marker appears at the plant site — only on that floor.</li>
+          <li><b>📍 Timeline</b> — red tick = kill, yellow = headshot; click a tick to jump there.</li>
+          <li><b>👁 Eye icon</b> in the list hides / shows a player on the map.</li>
+        </ul>
+      </div>
+
+      <div className={styles.helpSec}>
+        <div className={styles.helpSecTitle}>Player panel</div>
+        <div className={styles.helpRow}><span className={styles.helpK}>100 + bar</span><span>Live HP (per frame)</span></div>
+        <div className={styles.helpRow}><span className={styles.helpK}>🔫 weapon</span><span>Held in this frame</span></div>
+        <div className={styles.helpRow}><span className={styles.helpK}>K / A / D</span><span>Kills · assists · deaths (match)</span></div>
+        <div className={styles.helpRow}><span className={styles.helpK}>3,122</span><span>Total damage</span></div>
+        <div className={styles.helpRow}><span className={styles.helpK}>30%</span><span>Headshot %</span></div>
+        <div className={styles.helpRow}><span className={styles.helpK}>🦺 🪖</span><span>Armor · helmet</span></div>
+      </div>
+
+      <div className={styles.helpSec}>
+        <div className={styles.helpSecTitle}>Keyboard</div>
+        <div className={styles.helpKeys}>
+          <span><kbd>Space</kbd> play/pause</span>
+          <span><kbd>←/→</kbd> step</span>
+          <span><kbd>1–9</kbd> jump round</span>
+          <span><kbd>+/−</kbd> zoom</span>
+          <span><kbd>0</kbd> reset view</span>
+          <span><kbd>Esc</kbd> release follow</span>
+        </div>
       </div>
     </div>
   )
@@ -260,7 +351,11 @@ export default function MapPage() {
   })
   const [hiddenPlayers, setHiddenPlayers] = useState(new Set())
   const [feedCollapsed, setFeedCollapsed] = useState(false)
+  const [playersCollapsed, setPlayersCollapsed] = useState(false)
+  const [selectedPlayer, setSelectedPlayer] = useState(null)
   const [stageState, setStageState] = useState({ frame: 0, frames: [], playing: false })
+  const [helpOpen, setHelpOpen] = useState(false)
+  const helpRef = useRef(null)
 
   // Resolve the active round once rounds are known: the deep-linked round if
   // it exists, otherwise the first round.
@@ -277,6 +372,39 @@ export default function MapPage() {
     enabled:  !!activeRound && !!demoId,
     retry:    false,
   })
+
+  // Same cache key as MapReplayStage's query → deduped, no extra request.
+  const { data: mapInfo } = useQuery({
+    queryKey: ['map_info', mapName],
+    queryFn:  () => ticksApi.getMapInfo(mapName),
+    enabled:  !!mapName,
+    retry:    false,
+  })
+
+  // Esc closes the help panel (capture + stopPropagation so the stage's
+  // bubble-phase Esc — release follow — does not also fire).
+  useEffect(() => {
+    if (!helpOpen) return undefined
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        setHelpOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [helpOpen])
+
+  // Click outside (button + panel) closes the help panel.
+  useEffect(() => {
+    if (!helpOpen) return undefined
+    const onDown = (e) => {
+      if (helpRef.current && !helpRef.current.contains(e.target)) setHelpOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [helpOpen])
 
   const handleStageState = useCallback((s) => setStageState(s), [])
 
@@ -357,28 +485,68 @@ export default function MapPage() {
 
         <div className={styles.replayWrapper}>
           <div className={styles.replayLayout}>
-            <PlayerPanel
-              frames={frames}
-              frame={frame}
-              scoreboard={scoreboard}
-              playerColorMap={playerColorMap}
-              hiddenPlayers={hiddenPlayers}
-              togglePlayer={togglePlayer}
-              selectedRound={activeRound}
-              elapsed={elapsed}
-            />
+            {playersCollapsed ? (
+              <button
+                type="button"
+                className={styles.panelTab}
+                onClick={() => setPlayersCollapsed(false)}
+                title="Show player panel"
+              >
+                PLAYERS
+              </button>
+            ) : (
+              <PlayerPanel
+                frames={frames}
+                frame={frame}
+                scoreboard={scoreboard}
+                playerColorMap={playerColorMap}
+                hiddenPlayers={hiddenPlayers}
+                togglePlayer={togglePlayer}
+                selectedPlayer={selectedPlayer}
+                onSelectPlayer={setSelectedPlayer}
+                selectedRound={activeRound}
+                elapsed={elapsed}
+                onCollapse={() => setPlayersCollapsed(true)}
+              />
+            )}
 
-            <MapReplayStage
-              tickData={tickData}
-              mapName={mapName}
-              kills={d.kills || []}
-              roundNum={activeRound ? parseInt(activeRound) : null}
-              hasTicks={!!d.has_ticks}
-              playerColorMap={playerColorMap}
-              hiddenPlayers={hiddenPlayers}
-              variant="inline"
-              onState={handleStageState}
-            />
+            <div className={styles.stageCol}>
+              <MapReplayStage
+                tickData={tickData}
+                mapName={mapName}
+                kills={d.kills || []}
+                roundNum={activeRound ? parseInt(activeRound) : null}
+                hasTicks={!!d.has_ticks}
+                playerColorMap={playerColorMap}
+                hiddenPlayers={hiddenPlayers}
+                variant="inline"
+                selectedPlayer={selectedPlayer}
+                onSelectPlayer={setSelectedPlayer}
+                bomb={tickData?.bomb || null}
+                onSelectRound={selectRound}
+                onState={handleStageState}
+              />
+
+              <div className={styles.helpWrap} ref={helpRef}>
+                <button
+                  type="button"
+                  className={styles.helpBtn}
+                  title="Help — features & player panel guide"
+                  aria-label="Map replay help"
+                  aria-expanded={helpOpen}
+                  onClick={() => setHelpOpen(o => !o)}
+                >
+                  ?
+                </button>
+                {helpOpen && (
+                  <HelpPanel
+                    mapName={mapName}
+                    floors={mapInfo?.floors || []}
+                    onClose={() => setHelpOpen(false)}
+                  />
+                )}
+              </div>
+            </div>
 
             <EventFeed
               kills={d.kills || []}

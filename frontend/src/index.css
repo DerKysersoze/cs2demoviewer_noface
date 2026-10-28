@@ -130,26 +130,53 @@ input, textarea, select { font: inherit; }
   transform: scaleX(1);
 }
 
-/* "open steam profile" hint — fades in to the right of a player name when
-   the link is hovered or keyboard-focused (PlayerLink). Collapsed by
-   default so it never takes layout space; decorative (aria-hidden). */
+/* Hover hint — a compact pill that floats above a player name when the
+   link is hovered or keyboard-focused. Text depends on the destination:
+   "steam ↗" (PlayerLink → Steam profile) or "players →" (Overview-tab
+   names → Players tab dossier). Absolutely positioned so it never pushes
+   inline content or overruns a narrow card (e.g. the Rounds-tab kill-feed
+   rail); decorative (aria-hidden). */
+.steam-link { position: relative; }
 .steam-hint {
-  display: inline-block;
-  max-width: 0;
-  opacity: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  margin-left: 0;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgb(var(--grey-100));
+  border: 1px solid rgb(var(--grey-200));
+  color: rgb(var(--ink));
   font-size: 10px;
+  font-weight: 500;
   letter-spacing: 0.05em;
-  color: rgb(var(--grey-600));
-  transition: max-width .25s ease, opacity .2s ease, margin-left .25s ease;
+  text-transform: none;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s ease;
+  z-index: 40;
 }
 a:hover > .steam-hint,
-a:focus-visible > .steam-hint {
-  max-width: 160px;
+a:focus-visible > .steam-hint,
+button:hover > .steam-hint,
+button:focus-visible > .steam-hint {
   opacity: 1;
-  margin-left: 6px;
+}
+
+/* Text-style jump button (Overview-tab player names → Players tab): resets
+   button chrome so the name reads as a plain text link. Paired with
+   .steam-link (hint-pill positioning) and .link-underline (hover
+   underline) at the call site. */
+.name-jump {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 /* ── Site header ──────────────────────────────────────────────────────────── */
@@ -247,6 +274,7 @@ tbody tr:first-child { border-top: none; }
 tbody tr:hover { background: rgb(var(--grey-100)); }
 
 td.r, th.r { text-align: right; }
+td.l, th.l { text-align: left; }
 
 /* ── Badges ───────────────────────────────────────────────────────────────── */
 .badge {

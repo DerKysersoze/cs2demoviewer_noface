@@ -41,15 +41,21 @@ const isCt = (t = '') => typeof t === 'string' && t.toUpperCase().includes('CT')
  * The rail rows are plain <button>s (names without links — an anchor inside
  * a button is invalid HTML); the dossier head name uses PlayerLink for the
  * Steam community profile.
+ *
+ * Selection can be driven externally: `selectedName` preselects a player
+ * (used by the Overview tab, whose player names jump here) and `onSelect`
+ * is called when a rail row is picked. Without those props the component
+ * keeps its internal selection state.
  */
-export default function PlayerDossier({ scoreboard = [], aimBreakdown = [] }) {
+export default function PlayerDossier({ scoreboard = [], aimBreakdown = [], selectedName = null, onSelect = null }) {
   const topName = useMemo(() => {
     if (!scoreboard.length) return null
     return [...scoreboard].sort((a, b) => b.kills - a.kills || b.kd - a.kd)[0]?.name || null
   }, [scoreboard])
 
   const [name, setName] = useState(null)
-  const active = name || topName || scoreboard[0]?.name
+  const active = selectedName || name || topName || scoreboard[0]?.name
+  const pick = (n) => (onSelect ? onSelect(n) : setName(n))
 
   const sb  = scoreboard.find((p) => p.name === active) || null
   const aim = aimBreakdown.find((p) => p.name === active) || null
@@ -106,7 +112,7 @@ export default function PlayerDossier({ scoreboard = [], aimBreakdown = [] }) {
           key={p.name}
           type="button"
           className={`${styles.railBtn}${p.name === active ? ' ' + styles.railBtnOn : ''}`}
-          onClick={() => setName(p.name)}
+          onClick={() => pick(p.name)}
           aria-pressed={p.name === active}
         >
           <span>{p.name}</span>

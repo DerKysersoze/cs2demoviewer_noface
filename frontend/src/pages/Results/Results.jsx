@@ -8,11 +8,14 @@ import LinkButton from '../../components/ui/LinkButton'
 import { demosApi } from '../../api/demos'
 import MatchHeader from './MatchHeader'
 import MatchStats from './MatchStats'
+import TeamCompare from './TeamCompare'
+import FlowStrip from './FlowStrip'
 import RoundChips from './RoundChips'
 import RoundStory from './RoundStory'
 import RoundMap from './RoundMap'
 import Highlights from './Highlights'
 import deriveHighlights from './deriveHighlights'
+import deriveOverview from './deriveOverview'
 import AimBreakdown from '../Aim/AimBreakdown'
 import PlayerDossier from './PlayerDossier'
 import styles from './Results.module.css'
@@ -28,13 +31,21 @@ const TABS = [
  * Results — the match results page, organised as four tabs under the match
  * header band:
  *
- *   OVERVIEW — full-match stats table + highlights (jump switches to Rounds)
+ *   OVERVIEW — team at a glance (CT vs T aggregates), the round-by-round
+ *              match-flow strip, the upgraded stats table (MVP badge, main
+ *              weapon, KAST, DMG bars, team totals) and the moments
+ *              grouped by type; round jumps select the round and switch
+ *              to the Rounds tab, and player names (stats table, MVP
+ *              footer, moments) open the Players tab on that player's
+ *              dossier
  *   ROUNDS   — round chips, then the 2D map companion as main content
  *              (~80% right, always visible) with the kill-feed story as a
  *              compact rail on the left (~20%)
  *   AIM      — shared AimBreakdown (player list + summary, hit bars, weapons)
  *   PLAYERS  — PlayerDossier: CT/T rail; per player, match + aim stats, hit
- *              location and per-weapon table all in one place
+ *              location and per-weapon table all in one place; the rail
+ *              selection is owned by this page so the Overview tab can
+ *              jump straight to a player
  *
  * Loading and "match not found" states, ←/→ keyboard round navigation and
  * delete → home are unchanged.
@@ -44,6 +55,9 @@ export default function Results() {
   const navigate = useNavigate()
   const [selected, setSelected] = useState(1)
   const [tab, setTab] = useState('overview')
+  // Players-tab dossier selection (null = default to the top performer).
+  // Owned here so Overview-tab player names can jump straight to a player.
+  const [dossierName, setDossierName] = useState(null)
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['demo', demoId],
@@ -73,6 +87,18 @@ export default function Results() {
         tickrate,
       }),
     [d, tickrate]
+  )
+  // Overview-tab aggregates: team at a glance (incl. team MVPs), round flow,
+  // match MVP, KAST and best-of-match markers — all derived from the same
+  // payload (no extra API calls).
+  const overview = useMemo(
+    () =>
+      deriveOverview({
+        scoreboard: d?.scoreboard || [],
+        aimBreakdown: d?.aim_breakdown || [],
+        rounds,
+      }),
+    [d, rounds]
   )
 
   // Resolve the active round once the payload is known (or for odd round
@@ -107,6 +133,13 @@ export default function Results() {
   const jumpToRound = useCallback((roundNum) => {
     setSelected(roundNum)
     setTab('rounds')
+  }, [])
+
+  // Overview-tab player names open the Players tab with that player's
+  // dossier selected.
+  const jumpToPlayer = useCallback((name) => {
+    setDossierName(name)
+    setTab('players')
   }, [])
 
   const header = (
@@ -177,12 +210,29 @@ export default function Results() {
         {tab === 'overview' && (
           <div role="tabpanel" aria-label="Overview">
             <div className={styles.section}>
-              <MicroLabel className={styles.sectionLabel}>FULL MATCH STATS</MicroLabel>
-              <MatchStats scoreboard={d.scoreboard || []} />
+              <MicroLabel className={styles.sectionLabel}>TEAM AT A GLANCE</MicroLabel>
+              <TeamCompare teams={overview.teams} onPlayerClick={jumpToPlayer} />
             </div>
 
             <div className={styles.section}>
-              <Highlights highlights={highlights} onJump={jumpToRound} />
+              <MicroLabel className={styles.sectionLabel}>MATCH FLOW</MicroLabel>
+              <FlowStrip flow={overview.flow} onJump={jumpToRound} />
+            </div>
+
+            <div className={styles.section}>
+              <MicroLabel className={styles.sectionLabel}>FULL MATCH STATS</MicroLabel>
+              <MatchStats
+                scoreboard={d.scoreboard || []}
+                totalRounds={overview.totalRounds}
+                kastByName={overview.kastByName}
+                topName={overview.topName}
+                best={overview.best}
+                onPlayerClick={jumpToPlayer}
+              />
+            </div>
+
+            <div className={styles.section}>
+              <Highlights highlights={highlights} onJump={jumpToRound} onPlayerClick={jumpToPlayer} />
             </div>
           </div>
         )}
@@ -244,6 +294,8 @@ export default function Results() {
               <PlayerDossier
                 scoreboard={d.scoreboard || []}
                 aimBreakdown={d.aim_breakdown || []}
+                selectedName={dossierName}
+                onSelect={setDossierName}
               />
             </div>
           </div>

@@ -64,6 +64,59 @@
   margin: 0 auto;
 }
 .mapCanvas { width: 100%; height: 100%; display: block; }
+
+/* ── Hover tooltip ─────────────────────────────────────────────────────── */
+.tooltip {
+  position: absolute;
+  transform: translate(-50%, -135%);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: rgba(10, 12, 18, .94);
+  border: 1px solid rgba(148, 163, 184, .45);
+  border-radius: 8px;
+  padding: 5px 9px;
+  color: #e2e8f0;
+  font-size: 11px;
+  line-height: 1.35;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 6;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .45);
+}
+.tooltip strong { font-size: 11.5px; color: #fff; }
+.tooltipWep { opacity: .72; font-size: 10px; }
+
+/* ── Follow chip ───────────────────────────────────────────────────────── */
+.followChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  padding: 3px 6px 3px 9px;
+  background: rgba(56, 189, 248, .12);
+  border: 1px solid rgba(56, 189, 248, .55);
+  border-radius: var(--radius);
+  font-size: .72rem;
+  font-weight: 700;
+  color: rgb(var(--ink));
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.followChip button {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: .85rem;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 4px;
+}
+.followChip button:hover { background: rgba(56, 189, 248, .25); }
+
 .overlay {
   position: absolute;
   inset: 0;
@@ -127,15 +180,28 @@
   align-items: center;
   height: 20px;
 }
-.marker {
+/* Clickable kill markers — wide invisible hit area around a thin visible bar */
+.markerHit {
   position: absolute;
   top: 50%;
-  transform: translateY(-50%);
-  width: 2px;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+.markerHit:hover .markerBar { height: 18px; }
+.markerBar {
+  width: 3px;
   height: 14px;
   border-radius: 1px;
-  pointer-events: none;
-  z-index: 2;
+  transition: height .1s;
 }
 .bombRegion {
   position: absolute;
@@ -169,22 +235,47 @@
   max-width: none;
 }
 
+/* ── Canvas area (inline: flex-fills the column, square measured in JS) ── */
+.canvasArea {
+  width: 100%;
+  min-height: 0;
+}
+
 /* ── Inline variant (Map page grid: joins the side panels) ─────────────── */
+.stageInline {
+  height: 100%;
+  min-height: 0;
+}
 .stageInline .floorRow {
   max-width: none;
   margin: 0 0 8px;
+  flex-shrink: 0;
+}
+.stageInline .canvasArea {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
 }
 .stageInline .stageWrap {
   border-radius: 0;
   border-left: none;
   border-right: none;
-  /* square canvas sized so floor row + canvas + playback ≈ side panel height */
-  max-width: calc(100vh - 360px);
-  max-height: calc(100vh - 360px);
+  margin: 0;
+  /* full column width × height (measured inline); aspect-ratio only as
+     pre-measure fallback */
+  aspect-ratio: auto;
+  max-width: none;
+  max-height: none;
+  flex-shrink: 1;
+  min-height: 0;
 }
 .stageInline .playback {
   border-radius: 0 0 var(--radius) var(--radius);
   border-top: none;
   max-width: none;
   margin: 0;
+  flex-shrink: 0;
 }
